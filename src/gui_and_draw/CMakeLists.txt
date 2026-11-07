@@ -69,6 +69,7 @@ MainGLWindow.cpp
 MainGLWindow.cpp
 MainVSPScreen.cpp
 QaspFieldGuide.cpp
+QaspTheme.cpp
 ManageBackgroundScreen.cpp
 ManageBackground3DScreen.cpp
 ManageCORScreen.cpp
@@ -170,6 +171,7 @@ MainGLWindow.h
 MainGLWindow.h
 MainVSPScreen.h
 QaspFieldGuide.h
+QaspTheme.h
 ManageBackgroundScreen.h
 ManageBackground3DScreen.h
 ManageCORScreen.h

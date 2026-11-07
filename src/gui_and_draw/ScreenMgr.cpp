@@ -13,6 +13,7 @@
 #endif
 
 #include "FileUtil.h"
+#include "QaspTheme.h"
 
 #include "AdvLinkScreen.h"
 #include "AdvLinkVarRenameScreen.h"
@@ -95,7 +96,9 @@ ScreenMgr::ScreenMgr( Vehicle* vPtr )
     m_UpdateFlag = true;
     MessageBase::Register( string( "ScreenMgr" ) );
 
-    Fl::scheme( "GTK+" );
+    // QASP: flat modern theme.  Replaces FLTK's 3D-beveled box types.
+    // Must run before any widget is created.
+    QaspTheme::Apply();
     Fl::add_timeout( UPDATE_TIME, StaticTimerCB, this );
     Fl::add_handler( GlobalHandler );
 

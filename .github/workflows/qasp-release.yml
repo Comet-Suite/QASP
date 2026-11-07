@@ -31,7 +31,7 @@ permissions:
 # Cancel superseded builds on the same ref - these take hours, no point stacking them.
 concurrency:
   group: qasp-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-windows:
