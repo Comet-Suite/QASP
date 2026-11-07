@@ -1,3 +1,63 @@
+<img src="qasp-logo.png" alt="QASP" width="120" align="right">
+
+# QASP — Aircraft Design Studio
+
+**QASP is an unofficial fork of [OpenVSP](https://github.com/OpenVSP/openvsp)**,
+the parametric aircraft geometry tool developed by NASA and released under the
+[NASA Open Source Agreement (NOSA) 1.3](LICENSE).
+
+QASP is **not** produced, endorsed, sponsored or supported by NASA or by the
+OpenVSP development team. Please do not report QASP problems to them.
+
+---
+
+## Download
+
+Grab the latest **portable Windows build** from
+**[Releases](https://github.com/Comet-Suite/QASP/releases)**.
+
+- Extract the zip anywhere and run `vsp.exe`
+- No installer, no administrator rights, no registry entries
+- To uninstall, delete the folder
+- Verify your download against `SHA256SUMS.txt`
+
+## What QASP changes
+
+The goal is to make conceptual aircraft design approachable for people who are
+**not** aerospace engineers, without removing the engineering honesty.
+
+| Area | Change |
+|------|--------|
+| **Plain-English help** | New in-app **Field Guide** (`Help > Field Guide...`): a first-aircraft walkthrough, a jargon-free glossary, "what happens if I change this" trade-offs, and an explanation of what each analysis tool is for and how to read its output. |
+| **Modern file dialogs** | Save/Open now use your operating system's own file window (Explorer/Finder) by default — Quick Access, network drives, recent files and a proper overwrite prompt — instead of an in-app file browser. |
+| **Tooltips** | Hover help on controls, built on plain-language text for beginner-critical parameters and the technical description already attached to ~1,000 parameters. Upstream had no tooltip infrastructure at all. |
+| **Portable release** | Automated Windows x64 portable build published to Releases by CI, with checksums. |
+
+## Honest limits
+
+- QASP's analysis tools are **conceptual-design estimates**. They are the right
+  tools for comparing configurations quickly. They are **not** certification
+  data and do not replace flight test.
+- Anything QASP reports about speed, ceiling or performance is an estimate
+  built on the assumptions you supplied — engine thrust, mass, drag — and is
+  only as good as those inputs.
+
+## Building from source
+
+The build instructions below are the upstream OpenVSP instructions and still
+apply. QASP builds on Windows, Linux and macOS with CMake.
+
+CI builds a portable Windows package automatically on every push to `main`
+(see `.github/workflows/qasp-release.yml`).
+
+## Licence
+
+QASP is distributed under **NOSA 1.3**, unchanged. It is a modified build —
+see [MODIFICATIONS.md](MODIFICATIONS.md) for a precise list of what differs
+from upstream OpenVSP.
+
+---
+
 # Build and Installation Instructions for OpenVSP
 
 

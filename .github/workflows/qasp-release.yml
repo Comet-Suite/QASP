@@ -14,8 +14,10 @@ name: QASP Build
 
 on:
   push:
-    branches: [ qasp ]
-    tags: [ 'qasp-v*' ]
+    branches: [ main, qasp ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       make_release:
@@ -25,6 +27,11 @@ on:
 
 permissions:
   contents: write
+
+# Cancel superseded builds on the same ref - these take hours, no point stacking them.
+concurrency:
+  group: qasp-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-windows:
@@ -122,7 +129,7 @@ jobs:
   release:
     name: Publish Release
     needs: build-windows
-    if: startsWith(github.ref, 'refs/tags/qasp-v') || inputs.make_release == true
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.make_release == true
     runs-on: ubuntu-latest
     permissions:
       contents: write
