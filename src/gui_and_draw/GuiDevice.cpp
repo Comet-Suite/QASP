@@ -194,27 +194,30 @@ GuiDevice::GuiDevice()
     m_NewParmFlag = true;
     m_LastVal = 0.0;
     m_ResizableWidgetIndex = 0;
-    m_Tooltip = string();
 }
 
-//==== Add Tooltip ====//
-// Applies the hover help text to every widget backing this device.
+//==== QASP: explicit help for actions or screen-specific controls ====//
 void GuiDevice::AddTooltip( const char* tip )
 {
-    m_Tooltip = ( tip ? string( tip ) : string() );
+    m_HoverHelp.SetExplicit( tip ? string( tip ) : string() );
+    ApplyTooltipToWidgets();
+}
 
-    for ( int i = 0 ; i < ( int )m_WidgetVec.size() ; i++ )
+void GuiDevice::ApplyTooltipToWidgets()
+{
+    const string& text = m_HoverHelp.Text();
+    for ( Fl_Widget* widget : m_WidgetVec )
     {
-        if ( m_WidgetVec[i] )
+        if ( widget )
         {
-            // copy_tooltip duplicates the string, so the widget owns its own copy.
-            if ( m_Tooltip.empty() )
+            if ( text.empty() )
             {
-                m_WidgetVec[i]->tooltip( nullptr );
+                widget->tooltip( nullptr );
             }
             else
             {
-                m_WidgetVec[i]->copy_tooltip( m_Tooltip.c_str() );
+                // FLTK owns a copy, so no temporary-string pointer can dangle.
+                widget->copy_tooltip( text.c_str() );
             }
         }
     }
@@ -240,9 +243,9 @@ void GuiDevice::AddWidget( Fl_Widget* w, bool resizable_flag )
 
         // QASP: if a tooltip was registered before this widget was added,
         // apply it now so compound controls are fully covered.
-        if ( !m_Tooltip.empty() )
+        if ( !m_HoverHelp.Text().empty() )
         {
-            w->copy_tooltip( m_Tooltip.c_str() );
+            w->copy_tooltip( m_HoverHelp.Text().c_str() );
         }
     }
 }
@@ -272,60 +275,8 @@ void GuiDevice::Deactivate()
 }
 
 //==== Set Parm Pointer ====//
-//==== QASP plain-language hover help ====//
-// Nearly every parameter in OpenVSP already carries a technical description
-// (Parm::SetDescript, ~1000 of them).  That text is used as the hover tooltip.
-// For the parameters that most confuse people who are not aerospace engineers,
-// the entries below override the technical wording with plain English.
-// Keyed on Parm::GetName().
-static const char* QaspPlainLanguageTip( const string& parm_name )
-{
-    static const map< string, string > tips =
-    {
-        { "TotalSpan",         "Wing span: the distance from one wingtip to the other.\n"
-                               "A bigger span gives more lift and better efficiency, but adds weight\n"
-                               "and needs a wider hangar or parking space." },
-        { "TotalProjectedSpan", "How wide the wing looks from directly above or below.\n"
-                               "It ignores any upward angle (dihedral), so it is slightly less than true span.\n"
-                               "This is the number that matters for runway width and hangar size." },
-        { "TotalChord",        "Total wing chord: the distance from the front of the wing to the back.\n"
-                               "A longer chord means a thicker wing that lifts more at low speed." },
-        { "Aspect",            "Aspect ratio: roughly how long and narrow the wing is (span squared divided by area).\n"
-                               "Higher = long, glider-like wings: very efficient, but slower to roll.\n"
-                               "Lower = short, stubby wings: agile and fast, but needs more power." },
-        { "Taper",             "Taper ratio: how much narrower the wingtip is than the wing root.\n"
-                               "1.0 means both ends are the same width (rectangular wing, gentle stall behaviour).\n"
-                               "Lower values sweep the wing to a point, which saves weight but risks tip stall." },
-        { "Sweep",             "Sweep angle: how far back the wing leans.\n"
-                               "0 means straight out sideways (good for slow aircraft).\n"
-                               "30-40 degrees delays shock waves, which is why fast jets use it." },
-        { "Dihedral",          "Dihedral: the upward angle of the wings, like a shallow V.\n"
-                               "Positive dihedral makes the aircraft stable and self-levelling.\n"
-                               "Too much causes wobbling; too little makes it want to roll over." },
-        { "Twist",             "Twist: the difference in angle between the wing root and the tip.\n"
-                               "A little nose-down twist at the tip keeps the root stalling first,\n"
-                               "which keeps the aircraft controllable near stall speed." },
-        { "Area",              "Wing area: the flat surface area you would see looking down at the wing.\n"
-                               "More area = more lift at a given speed, so a lower takeoff and landing speed." },
-        { "Span",              "Span (for this section only): how wide this slice of the wing is." },
-        { "Root_Chord",        "Root chord: the front-to-back length of the wing where it joins the body." },
-        { "Tip_Chord",         "Tip chord: the front-to-back length at the wingtip.\n"
-                               "Small tip chord = more pointed wing; large = squarer wing." },
-        { "Avg_Chord",         "Average chord: roughly wing area divided by span.\n"
-                               "A quick way to judge how 'deep' the wing is overall." },
-        { "ProjectedSpan",     "Span of this wing section measured from directly above." },
-    };
-
-    map< string, string >::const_iterator it = tips.find( parm_name );
-
-    if ( it == tips.end() )
-    {
-        return nullptr;
-    }
-
-    return it->second.c_str();
-}
-
+// QASP help is matched by group + name (and description where necessary).
+// "Density" of outside air must never explain density of solid material.
 Parm* GuiDevice::SetParmID( const string& parm_id )
 {
     //==== Check For New ParmID ====//
@@ -338,26 +289,15 @@ Parm* GuiDevice::SetParmID( const string& parm_id )
     m_ParmID = parm_id;
     Parm* parm_ptr = ParmMgr.FindParm( m_ParmID );
 
-    //==== QASP: attach hover help the first time this control is bound ====//
-    // SetParmID() runs on every refresh, so only do this once per device.
-    if ( parm_ptr && m_Tooltip.empty() )
+    // QASP: controls are reused when the selected component/section changes.
+    // Refresh on changed metadata, preserve explicit help, and clear stale help
+    // when no parameter is bound. The cache never depends on a random Parm ID.
+    const bool help_changed = parm_ptr
+        ? m_HoverHelp.Bind( parm_ptr->GetGroupName(), parm_ptr->GetName(), parm_ptr->GetDescript() )
+        : m_HoverHelp.ClearBinding();
+    if ( help_changed )
     {
-        const char* plain_tip = QaspPlainLanguageTip( parm_ptr->GetName() );
-
-        if ( plain_tip )
-        {
-            AddTooltip( plain_tip );
-        }
-        else
-        {
-            // Fall back to the parameter's own description, unless it is unset.
-            string desc = parm_ptr->GetDescript();
-
-            if ( !desc.empty() && desc != "Default Description" )
-            {
-                AddTooltip( desc );
-            }
-        }
+        ApplyTooltipToWidgets();
     }
 
     return parm_ptr;

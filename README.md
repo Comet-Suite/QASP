@@ -11,14 +11,25 @@ OpenVSP development team. Please do not report QASP problems to them.
 
 ---
 
+## Beginner help revision
+
+The first portable release was tested on a user's PC. Its help was not yet
+good enough: many hover texts were technical labels, not beginner explanations.
+The revision adds 135 context-specific explanations and 23 short illustrated
+lessons. Some advanced controls still retain labelled reference text.
+
+See [scope, checks and actual native component screenshots](docs/QASP-HELP-REVISION.md).
+The screenshots are from the real help component on Linux, **not** a Windows
+full-application runtime test. The portable-folder packaging is unchanged.
+
 ## Download
 
 Grab the latest **portable Windows build** from
 **[Releases](https://github.com/Comet-Suite/QASP/releases)**.
 
 - Extract the zip anywhere and run `vsp.exe`
-- No installer, no administrator rights, no registry entries
-- To uninstall, delete the folder
+- No installer; keep the application, tools and DLLs together
+- To remove the program, delete its folder (saved models/preferences may be elsewhere)
 - Verify your download against `SHA256SUMS.txt`
 
 ## What QASP changes
@@ -28,9 +39,9 @@ The goal is to make conceptual aircraft design approachable for people who are
 
 | Area | Change |
 |------|--------|
-| **Plain-English help** | New in-app **Field Guide** (`Help > Field Guide...`): a first-aircraft walkthrough, a jargon-free glossary, "what happens if I change this" trade-offs, and an explanation of what each analysis tool is for and how to read its output. |
+| **Plain-English help** | In-app **Field Guide** (`Help > Field Guide...`): 23 short illustrated lessons covering terms, aircraft effects, first-model steps and analysis-tool limits. |
 | **Modern file dialogs** | Save/Open now use your operating system's own file window (Explorer/Finder) by default — Quick Access, network drives, recent files and a proper overwrite prompt — instead of an in-app file browser. |
-| **Tooltips** | Hover help on controls, built on plain-language text for beginner-critical parameters and the technical description already attached to ~1,000 parameters. Upstream had no tooltip infrastructure at all. |
+| **Tooltips** | 135 context-specific parameter explanations: meaning, effect, example and units. Advanced controls not yet covered retain labelled reference text; these are not counted as beginner explanations. |
 | **Portable release** | Automated Windows x64 portable build published to Releases by CI, with checksums. |
 
 ## Honest limits
@@ -38,9 +49,9 @@ The goal is to make conceptual aircraft design approachable for people who are
 - QASP's analysis tools are **conceptual-design estimates**. They are the right
   tools for comparing configurations quickly. They are **not** certification
   data and do not replace flight test.
-- Anything QASP reports about speed, ceiling or performance is an estimate
-  built on the assumptions you supplied — engine thrust, mass, drag — and is
-  only as good as those inputs.
+- This revision does **not** add a validated automatic maximum-speed or
+  maximum-altitude calculator. Entering an altitude in an atmosphere tool
+  requests conditions there; it does not prove the aircraft can reach it.
 
 ## Building from source
 

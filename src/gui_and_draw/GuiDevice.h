@@ -31,6 +31,7 @@
 #include <FL/Fl_Text_Editor.H>
 
 #include "Cartesian.H"
+#include "QaspHelp.h"
 
 #include "Vec3d.h"
 #include "Parm.h"
@@ -171,7 +172,7 @@ public:
     // still receive it, because AddWidget() re-applies the stored text.
     virtual void AddTooltip( const string& tip )    { AddTooltip( tip.c_str() ); }
     virtual void AddTooltip( const char* tip );
-    virtual string GetTooltip()                     { return m_Tooltip; }
+    virtual string GetTooltip()                     { return m_HoverHelp.Text(); }
 
     virtual void DeviceCB( Fl_Widget* w ) = 0;
     static void StaticDeviceCB( Fl_Widget *w, void* data )
@@ -180,6 +181,8 @@ public:
     }
 
 protected:
+
+    void ApplyTooltipToWidgets();
 
     virtual bool CheckValUpdate( double val );
     virtual Parm* SetParmID( const string& parm_id );
@@ -197,7 +200,7 @@ protected:
     double m_LastVal;
 
     int m_ResizableWidgetIndex;
-    string m_Tooltip;
+    QaspTooltipState m_HoverHelp;
     vector< Fl_Widget* > m_WidgetVec;
 
 };

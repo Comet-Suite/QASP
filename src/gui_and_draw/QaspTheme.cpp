@@ -11,6 +11,7 @@
 
 #include <FL/Fl.H>
 #include <FL/Fl_Widget.H>
+#include <FL/Fl_Tooltip.H>
 #include <FL/fl_draw.H>
 
 bool QaspTheme::s_Applied = false;
@@ -86,6 +87,17 @@ void QaspTheme::Apply()
 
     Fl::set_color( FL_SELECTION_COLOR, 0, 122, 204 );  // accent blue selection
     Fl::set_color( FL_INACTIVE_COLOR, 132, 142, 155 ); // disabled text
+
+    // QASP: explanation-sized hover cards, not tiny single-line labels.
+    Fl_Tooltip::font( FL_HELVETICA );
+    Fl_Tooltip::size( 13 );
+#if FL_MAJOR_VERSION > 1 || ( FL_MAJOR_VERSION == 1 && FL_MINOR_VERSION >= 4 )
+    Fl_Tooltip::wrap_width( 480 );
+#endif
+    Fl_Tooltip::delay( 0.6f );
+    Fl_Tooltip::hoverdelay( 0.1f );
+    Fl_Tooltip::color( fl_rgb_color( 250, 252, 255 ) );
+    Fl_Tooltip::textcolor( fl_rgb_color( 30, 38, 48 ) );
 
     //---- 3. Box types -----------------------------------------------------
     // Replacing the bevel drawer is what actually modernises the look.  The
