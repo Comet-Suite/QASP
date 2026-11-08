@@ -25,6 +25,11 @@ Baseline: OpenVSP **3.56.0** (upstream commit `ca4958f2`).
 
 - `.github/workflows/qasp-release.yml`: portable Windows x64 ZIP build, package
   verification, checksums, artifacts and release publication.
+- Manual in-place release refresh: verify the existing target, upload/download
+  and checksum the new package before retiring older ZIPs; preserve release ID,
+  title and Git tag. `verify_qasp_windows_package.py` checks x64 PE files,
+  supporting programs, nine MSVC runtimes and notices, and adds an exact source
+  stamp. These file checks are not a complete Windows GUI/runtime test.
 - Beginner-help content and focused native component checks now gate the Windows
   build. The checks use the exact bundled FLTK source snapshot.
 - **No installer or single-file bundler.** Existing `vsp.exe`, solver tools,

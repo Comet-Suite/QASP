@@ -24,6 +24,10 @@ on:
         description: 'Publish a GitHub Release from this run'
         type: boolean
         default: false
+      update_existing_release:
+        description: 'Existing release tag to update in place; never creates a release or tag'
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -41,6 +45,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate an in-place release update target
+        if: github.event_name == 'workflow_dispatch' && inputs.update_existing_release != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_TAG: ${{ inputs.update_existing_release }}
+        run: gh release view "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url
 
       - name: Install native test dependencies
         run: |
@@ -95,6 +106,12 @@ jobs:
           pip install --upgrade pip setuptools wheel
           pip install sphinx numpy
 
+      - name: Cache bundled Windows dependencies
+        uses: actions/cache@v4
+        with:
+          path: buildlibs
+          key: qasp-msvc-v143-${{ runner.os }}-${{ hashFiles('Libraries/CMakeLists.txt', 'Libraries/cmake/**', 'Libraries/*.zip') }}
+
       - name: Build bundled libraries
         shell: bash
         run: |
@@ -125,6 +142,8 @@ jobs:
 
           OUT="QASP-${VSPVER}-Windows-x64-portable_${SHORT_SHA}.zip"
           cp $(ls QASP-*.zip | head -1) "$OUT"
+          python "$GITHUB_WORKSPACE/tools/verify_qasp_windows_package.py" "$OUT" \
+            --source "$GITHUB_SHA" --stamp
 
           # Extract so the release also carries the raw unpacked tree.
           mkdir -p unpacked
@@ -166,12 +185,15 @@ jobs:
   release:
     name: Publish Release
     needs: build-windows
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.make_release == true
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.make_release == true || (github.event_name == 'workflow_dispatch' && inputs.update_existing_release != '')
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
+      - name: Checkout matching build source
+        uses: actions/checkout@v4
+
       - name: Download built package
         uses: actions/download-artifact@v4
         with:
@@ -181,19 +203,48 @@ jobs:
       - name: Show contents
         run: ls -la dist
 
+      - name: Back up the existing release before replacement
+        if: github.event_name == 'workflow_dispatch' && inputs.update_existing_release != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_TAG: ${{ inputs.update_existing_release }}
+        run: |
+          mkdir -p before-update
+          gh release view "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,name,body,url,assets > before-update/release.json
+          gh release download "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'QASP-*-Windows-x64-portable_*.zip' --pattern SHA256SUMS.txt \
+            --dir before-update
+
+      - name: Retain rollback copy of previous release assets
+        if: github.event_name == 'workflow_dispatch' && inputs.update_existing_release != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: QASP-before-existing-release-refresh
+          path: before-update/
+          compression-level: 0
+          retention-days: 30
+
       - name: Publish release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXISTING_RELEASE: ${{ inputs.update_existing_release }}
         run: |
           set -euo pipefail
+          (cd dist && sha256sum --check SHA256SUMS.txt)
+          python3 tools/verify_qasp_windows_package.py dist/QASP-*.zip --source "$GITHUB_SHA"
 
           # Derive a version string for the title/notes.
           ZIPFILE=$(ls dist/QASP-*.zip | head -1)
           echo "Attaching: $ZIPFILE"
 
           TAG="$GITHUB_REF_NAME"
-          if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
+          if [[ -n "$EXISTING_RELEASE" ]]; then
+            TAG="$EXISTING_RELEASE"
+            # Refuse a missing target. This path MUST NOT create a release/tag.
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url
+          elif [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
             TAG="qasp-build-$(date -u +%Y%m%d-%H%M%S)"
           fi
 
@@ -211,13 +262,33 @@ jobs:
 
           Verify the download against `SHA256SUMS.txt`.
 
-          ### Beginner help revision
-          This update replaces long Field Guide pages with 23 short illustrated
-          lessons and adds 135 context-specific parameter explanations. Hover
-          help explains meaning, aircraft effect, an example and units.
-          Advanced controls not yet covered retain labelled reference text.
+          ### Workspace update
+          - Left activity icons open/hide resizable panels; the component tree
+            and geometry editors are hosted in the main workspace.
+          - Snapshot-backed project tabs preserve separate model working copies.
+            Only one engine is active; switching clears generated results/mesh
+            previews, undo history and the clipboard. Export results first.
+          - Automatic fit on component creation, a sidebar hidden on startup,
+            compact toolbar and 18-pixel filename/status strip.
+          - Staged saves, disk-conflict checks and explicit practical risks.
+          - Existing 23 illustrated lessons and 135 authored hover explanations
+            are retained. Advanced controls still have coverage limitations.
 
-          The portable-folder layout and supporting tools are unchanged.
+          ### Validation and limitations
+          Experimental workspace changes: focused coordinator/FLTK tests passed,
+          and the full Linux application built and displayed a real example
+          through a project-tab reload. The Windows package has been compiled
+          and checked for required tools, runtime DLLs, notices, CRC and x64 PE
+          signatures. This is **not a complete Windows GUI/runtime or numerical
+          validation suite**. The repository screenshots are Linux captures,
+          not Windows screenshots. Test on copies of your models and keep backups.
+
+          Read `RISKS_AND_LIMITATIONS.md` inside the portable folder. Crashes,
+          lost/corrupt work, incorrect inputs/results, missing external resources,
+          unsafe conclusions and file compatibility problems remain possible.
+          No flight-safety, airworthiness, top-speed or ceiling guarantee is made.
+
+          The portable-folder layout and supporting executables are retained.
 
           ### Requirements
           Windows 10/11, 64-bit, with a compatible graphics driver. Microsoft
@@ -230,8 +301,47 @@ jobs:
           This is a modified build; see `MODIFICATIONS.md` inside the archive.
           EOF
 
-          gh release create "$TAG" \
-            --title "QASP ${TAG} (Windows x64 portable)" \
-            --notes-file notes.md \
-            --repo "$GITHUB_REPOSITORY" \
-            dist/QASP-*.zip dist/SHA256SUMS.txt
+          cat >> notes.md <<EOF
+
+          ### Exact source for this binary
+          Built from commit **${GITHUB_SHA}**:
+          https://github.com/${GITHUB_REPOSITORY}/tree/${GITHUB_SHA}
+
+          Matching source archive:
+          https://github.com/${GITHUB_REPOSITORY}/archive/${GITHUB_SHA}.zip
+
+          See \`QASP-BUILD-INFO.json\` inside the ZIP. When an existing release is
+          updated, its original Git tag is not moved: GitHub's automatic
+          tag-based source downloads may refer to the original, older source.
+          Use the exact commit/archive linked above for the refreshed binary.
+          EOF
+
+          if [[ -n "$EXISTING_RELEASE" ]]; then
+            NEWZIP=$(basename "$ZIPFILE")
+            # Upload the new, uniquely source-named ZIP before touching old assets.
+            gh release upload "$TAG" "$ZIPFILE" --repo "$GITHUB_REPOSITORY" --clobber
+            VERIFY_DIR="$RUNNER_TEMP/qasp-release-verification"
+            mkdir -p "$VERIFY_DIR"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern "$NEWZIP" --dir "$VERIFY_DIR" --clobber
+            EXPECTED=$(sha256sum "$ZIPFILE" | cut -d' ' -f1)
+            ACTUAL=$(sha256sum "$VERIFY_DIR/$NEWZIP" | cut -d' ' -f1)
+            test "$EXPECTED" = "$ACTUAL"
+            gh release upload "$TAG" dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+            # Retire older portable ZIPs only after the replacement was downloaded
+            # and verified. Preserve the existing release ID, tag and title.
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' |
+            while IFS= read -r ASSET; do
+              if [[ "$ASSET" == QASP-*-Windows-x64-portable_*.zip && "$ASSET" != "$NEWZIP" ]]; then
+                gh release delete-asset "$TAG" "$ASSET" --yes --repo "$GITHUB_REPOSITORY"
+              fi
+            done
+            echo "Updated existing release: $TAG (no new release or tag created)"
+          else
+            gh release create "$TAG" \
+              --title "QASP ${TAG} (Windows x64 portable)" \
+              --notes-file notes.md \
+              --repo "$GITHUB_REPOSITORY" \
+              dist/QASP-*.zip dist/SHA256SUMS.txt
+          fi

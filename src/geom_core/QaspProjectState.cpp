@@ -1,4 +1,8 @@
 // NOSA 1.3; see LICENSE. QASP addition for actual per-project setup preservation.
+#if defined(_WIN32) || defined(WIN32)
+#undef _HAS_STD_BYTE
+#define _HAS_STD_BYTE 0
+#endif
 #include "QaspProjectState.h"
 #include "DesignVarMgr.h"
 #include "FitModelMgr.h"
