@@ -164,6 +164,9 @@ ManageGeomScreen::~ManageGeomScreen()
 bool ManageGeomScreen::Update()
 {
     BasicScreen::Update();
+    // ScreenMgr clears the shared dirty flag after every update. Keep a local
+    // pending refresh so a hidden tree is rebuilt when its activity icon opens.
+    if ( m_VehiclePtr && m_VehiclePtr->GetGeomMapDirtyFlag() ) { m_BrowserRefreshNeeded = true; }
 
     if ( m_NeedsShowHideGeoms )
     {
@@ -249,8 +252,9 @@ void ManageGeomScreen::LoadBrowser()
     vector < Geom* > geom_ptr_vec = m_VehiclePtr->FindGeomVec( geom_id_vec );
 
     //==== Rebuild Tree if Redraw Required ====//
-    if ( m_VehiclePtr->GetGeomMapDirtyFlag() )
+    if ( m_BrowserRefreshNeeded || m_VehiclePtr->GetGeomMapDirtyFlag() )
     {
+        m_BrowserRefreshNeeded = false;
         //==== Clear old tree ====//
         m_GeomBrowser->clear();
 
@@ -603,6 +607,7 @@ void ManageGeomScreen::AddGeom()
 
 void ManageGeomScreen::ResetProjectSelection()
 {
+    m_BrowserRefreshNeeded = true;
     m_VehSelected = false;
     m_SelVec.clear();
     m_GeomBrowser->clear();

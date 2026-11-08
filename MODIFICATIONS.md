@@ -96,6 +96,10 @@ Baseline: OpenVSP **3.56.0** (upstream commit `ca4958f2`).
   project-specific materials. `ScreenBase.*` and `ManageGeomScreen.*` reset UI bindings.
 - `tools/test_qasp_projects.cpp`, `tools/qasp_workspace_test.cpp`: focused
   coordinator/filesystem and real FLTK widget checks, not Windows runtime proof.
+- `ManageGeomScreen.*`: remember pending tree refreshes while the sidebar is
+  hidden, rather than losing the engine's shared geometry-dirty notification.
+- `tools/capture_qasp_workspace.py`: capture the actual full Linux modeling
+  application with an upstream example model; this is not Windows validation.
 - `RISKS_AND_LIMITATIONS.md`, `README.md`, `src/CMakeLists.txt`: substantive
   practical risks and non-guarantees, prominently linked and installed with the
   portable files. The NOSA 1.3 licence remains unchanged.

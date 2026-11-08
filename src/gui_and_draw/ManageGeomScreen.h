@@ -175,6 +175,7 @@ protected:
     bool m_VehSelected;
     bool m_VehOpen;
     bool m_NeedsShowHideGeoms;
+    bool m_BrowserRefreshNeeded = true; // Remember dirty geometry while the panel is hidden.
 
     vector < string > m_SelVec;
 
