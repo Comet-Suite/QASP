@@ -96,8 +96,12 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Install cmake
-        uses: jwlawson/actions-setup-cmake@v2
+      - name: Use the runner's preinstalled CMake
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake --version
+          if ($LASTEXITCODE -ne 0) { throw 'The Windows runner must provide CMake.' }
 
       - name: Install dependencies
         shell: cmd
@@ -106,8 +110,9 @@ jobs:
           pip install --upgrade pip setuptools wheel
           pip install sphinx numpy
 
-      - name: Cache bundled Windows dependencies
-        uses: actions/cache@v4
+      - name: Restore bundled Windows dependencies
+        id: dependency-cache
+        uses: actions/cache/restore@v4
         with:
           path: buildlibs
           key: qasp-msvc-v143-${{ runner.os }}-${{ hashFiles('Libraries/CMakeLists.txt', 'Libraries/cmake/**', 'Libraries/*.zip') }}
@@ -119,6 +124,13 @@ jobs:
           cd "$GITHUB_WORKSPACE/buildlibs"
           cmake -DCMAKE_BUILD_TYPE=Release -A x64 ../Libraries
           cmake --build . --config Release -j 2
+
+      - name: Retain completed dependencies even if application compilation later fails
+        if: steps.dependency-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: buildlibs
+          key: ${{ steps.dependency-cache.outputs.cache-primary-key }}
 
       - name: Build QASP
         shell: bash

@@ -25,6 +25,8 @@ Baseline: OpenVSP **3.56.0** (upstream commit `ca4958f2`).
 
 - `.github/workflows/qasp-release.yml`: portable Windows x64 ZIP build, package
   verification, checksums, artifacts and release publication.
+- Windows CI uses the runner's preinstalled CMake rather than a redundant
+  external download, and saves completed dependency builds before compiling QASP.
 - Manual in-place release refresh: verify the existing target, upload/download
   and checksum the new package before retiring older ZIPs; preserve release ID,
   title and Git tag. `verify_qasp_windows_package.py` checks x64 PE files,
