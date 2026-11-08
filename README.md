@@ -16,6 +16,14 @@ OpenVSP development team. Please do not report QASP problems to them.
 
 ---
 
+## Workspace development preview — not yet a Windows release
+
+The new native workspace now compiles and runs on Linux. See the
+[actual application screenshots and validation scope](docs/QASP-WORKSPACE.md):
+left activity icons, a hideable/resizable sidebar, integrated component tree,
+project tabs and a more spacious canvas. **These changes are not in the published
+`.2` Windows download.** Windows packaging/runtime validation is still pending.
+
 ## Beginner help revision
 
 The first portable release was tested on a user's PC. Its help was not yet

@@ -1,0 +1,26 @@
+{
+  "kind": "Unmodified pixels from the running full Linux QASP application",
+  "not": "Not a mockup, standalone component harness, or Windows runtime test",
+  "binary": "/home/user/.cache/qasp-native-app/vsp/vsp",
+  "model": "/home/user/.cache/qasp-native-source/src/vsp_aero/examples/b777/Boeing_777-9x_ref.vsp3",
+  "source_commit": "b15b293c029d20f9c367bcc8d777b2528b21b064",
+  "window_title": "QASP \u2014 Boeing_777-9x_ref.vsp3 *",
+  "screenshots": [
+    {
+      "path": "/home/user/openvsp/docs/screenshots/workspace/workspace-canvas-linux.png",
+      "size": [
+        1568,
+        900
+      ],
+      "sha256": "8531482bf312bf1be85a398c8b15c61072c36d36c3c716056a384f641cedd35d"
+    },
+    {
+      "path": "/home/user/openvsp/docs/screenshots/workspace/workspace-components-linux.png",
+      "size": [
+        1568,
+        900
+      ],
+      "sha256": "3f73e3fa76b8ec389d6eccb12822d2c61aec81490ef291846850cf42553715e4"
+    }
+  ]
+}

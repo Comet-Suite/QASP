@@ -1,0 +1,15 @@
+WARNING 7: VSPAERO Solver Not Found. 
+	Expected here: /home/user/.cache/qasp-native-app/vsp/vspaero
+WARNING 7: VSPAERO Viewer Not Found. 
+	Expected here: /home/user/.cache/qasp-native-app/vsp/vspviewer
+WARNING 7: VSPAERO Loads Not Found. 
+	Expected here: /home/user/.cache/qasp-native-app/vsp/vsploads
+WARNING 7: OpenVSP Help Not Found. 
+	Expected here: /home/user/.cache/qasp-native-app/vsp/help//vsp_help
+Screen Main: widget 'COMPONENTS' at (0, 0, 5, 5) reaches outside group (0, 26, 1568, 856), so it cannot be clicked.
+Screen Main: widget 'Mass and centre of gravity' at (64, 257, 1, 34) reaches outside group (48, 122, 1, 760), so it cannot be clicked.
+Screen Main: widget 'Parasite drag' at (64, 299, 1, 35) reaches outside group (48, 122, 1, 760), so it cannot be clicked.
+Screen Main: widget 'VSPAERO aerodynamics' at (64, 342, 1, 34) reaches outside group (48, 122, 1, 760), so it cannot be clicked.
+Screen Main: widget 'CFD mesh preparation' at (64, 384, 1, 35) reaches outside group (48, 122, 1, 760), so it cannot be clicked.
+Screen Main: widget 'FEA structure' at (64, 427, 1, 34) reaches outside group (48, 122, 1, 760), so it cannot be clicked.
+Screen Main: widget 'Open the illustrated Field Guide' at (64, 305, 1, 37) reaches outside group (48, 122, 1, 760), so it cannot be clicked.
