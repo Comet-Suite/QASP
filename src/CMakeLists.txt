@@ -339,6 +339,9 @@ ENDIF()
 
 # INCLUDE( IdentifyLibs )  # Debugging to confirm which libraries are set.
 
+# QASP: practical risks travel with every portable folder, not just the source repo.
+INSTALL( FILES ${VSP_SOURCE_DIR}/../RISKS_AND_LIMITATIONS.md DESTINATION . )
+
 SET( CPACK_PACKAGE_NAME QASP )
 SET( CPACK_PACKAGE_VERSION_MAJOR ${VSPVER_MAJOR} )
 SET( CPACK_PACKAGE_VERSION_MINOR ${VSPVER_MINOR} )

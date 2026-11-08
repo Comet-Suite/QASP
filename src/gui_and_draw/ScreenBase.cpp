@@ -76,7 +76,8 @@ void VspScreen::Show()
 bool VspScreen::IsShown()
 {
     assert( m_FLTK_Window );
-    return !!( m_FLTK_Window->shown() );
+    // A docked native window may still have an OS handle while its panel is hidden.
+    return m_FLTK_Window->shown() && m_FLTK_Window->visible_r();
 }
 
 //==== Hide Window ====//

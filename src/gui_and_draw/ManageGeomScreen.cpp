@@ -12,6 +12,7 @@
 #include "ScreenMgr.h"
 #include "StlHelper.h"
 #include "HingeGeom.h"
+#include "MainVSPScreen.h"
 
 using namespace vsp;
 
@@ -592,7 +593,21 @@ void ManageGeomScreen::AddGeom()
         m_SelVec.clear();
         m_SelVec.push_back( added_id );
         SetNeedsShowHideGeoms();
+        if ( m_VehiclePtr->FindGeom( added_id ) )
+        {
+            auto *main = dynamic_cast<MainVSPScreen *>( m_ScreenMgr->GetScreen( vsp::VSP_MAIN_SCREEN ) );
+            if ( main ) { main->RequestAutoFit(); }
+        }
     }
+}
+
+void ManageGeomScreen::ResetProjectSelection()
+{
+    m_VehSelected = false;
+    m_SelVec.clear();
+    m_GeomBrowser->clear();
+    SetNeedsShowHideGeoms();
+    ResetProjectBinding();
 }
 
 //==== Load Display Choice ====//

@@ -69,6 +69,9 @@ MainGLWindow.cpp
 MainGLWindow.cpp
 MainVSPScreen.cpp
 QaspFieldGuide.cpp
+QaspProjectSession.cpp
+QaspVehicleProjectHost.cpp
+QaspWorkspace.cpp
 QaspHelp.cpp
 QaspLessonDiagram.cpp
 QaspTheme.cpp
@@ -173,6 +176,9 @@ MainGLWindow.h
 MainGLWindow.h
 MainVSPScreen.h
 QaspFieldGuide.h
+QaspProjectSession.h
+QaspVehicleProjectHost.h
+QaspWorkspace.h
 QaspHelp.h
 QaspLessonDiagram.h
 QaspHelpData.inc

@@ -262,6 +262,8 @@ public:
     // empty string. This facilitates deleting the generated mesh from the API.
     string ExportFile( const string & file_name, int write_set, int degen_set, int subsFlag, int file_type, bool useMode, const string &modeID );
     bool WriteXMLFile( const string & file_name, int set );
+    // QASP: serialize against the original project/resource base without resetting exports.
+    bool WriteXMLFileWithBase( const string &file_name, const string &base_file, int set );
     void WriteXSecFile( const string & file_name, int write_set, bool useMode, const string& modeID );
     void WritePLOT3DFile( const string & file_name, int write_set, bool useMode, const string &modeID );
     string WriteSTLFile( const string & file_name, int write_set, int subsFlag, bool useMode, const string &modeID );

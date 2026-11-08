@@ -85,6 +85,7 @@ public:
     virtual bool IsShown();
     virtual void Hide();
     virtual bool Update();
+    void ResetProjectBinding() { m_PrevGeom = nullptr; }
     virtual void GetCollIDs( vector < string > &collIDVec ) {};
 
     ScreenMgr* GetScreenMgr()

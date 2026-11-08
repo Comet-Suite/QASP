@@ -15,10 +15,20 @@
 #endif
 
 #include <cmath>
+#include <algorithm>
+#include <filesystem>
+#include <iomanip>
+#include <locale>
+#include <sstream>
+#include <FL/Fl_Terminal.H>
+#include <FL/Fl_Text_Editor.H>
 
 #include "main.h"
 #include "MainVSPScreen.h"
 #include "QaspFieldGuide.h"
+#include "QaspWorkspace.h"
+#include "QaspProjectSession.h"
+#include "QaspVehicleProjectHost.h"
 #include "MainGLWindow.h"
 #include "ScreenMgr.h"
 #include "GraphicEngine.h"
@@ -45,6 +55,8 @@
 using namespace vsp;
 
 using namespace vsp;
+
+namespace { std::string QaspModelNames( Vehicle *vehicle ); }
 
 //==== Constructor ====//
 MainVSPScreen::MainVSPScreen( ScreenMgr* mgr ) : ActionScreen( mgr )
@@ -74,29 +86,13 @@ MainVSPScreen::MainVSPScreen( ScreenMgr* mgr ) : ActionScreen( mgr )
     Fl::screen_work_area( x, y, w, h, screen );
     m_FLTK_Window->screen_num( screen );
 
-    //==== Determine remaining screen width after geombrowser + geomscreen usage ====//
-    int geom_group_width = 0;
-    ManageGeomScreen* mgs = dynamic_cast< ManageGeomScreen* >( mgr->GetScreen( vsp::VSP_MANAGE_GEOM_SCREEN ) );
-    if ( mgs )
-    {
-        vector< VspScreen* > geomscreen_vec = mgs->GetGeomScreenVec();
-        for ( int i = 0; i < geomscreen_vec.size(); i++ )
-        {
-            geom_group_width = std::max( geom_group_width, geomscreen_vec[i]->GetFlWindow()->w() );
-        }
-        // Add ManageGeomScreen's width
-        geom_group_width += mgs->GetFlWindow()->w();
-    }
-
-    //==== Figure out which is smaller, remaining width or the height ====//
-    // Window frames lie outside these client sizes.  Leave a frame's width, enough at 200% scaling on
-    // Windows, at each end of the row of windows, and the 5 between the main window and the browser,
-    // so no frame reaches past the screen and the windows are not moved to fit another screen.
+    // QASP uses one workspace instead of reserving desktop space for floating
+    // tree/editor windows. Panels share the main window and can be hidden.
     int frame = 16;
-    int w_allow = w - geom_group_width - 2 * frame - 5;
-    int h_allow = 0.9 * h;
-
-    m_FLTK_Window->resize( x + frame, y + 30, w_allow, h_allow );
+    int w_allow = std::max( 640, w - 2 * frame );
+    int h_allow = std::max( 420, static_cast<int>( 0.9 * h ) );
+    m_FLTK_Window->resize( x + frame, y + 20, w_allow, h_allow );
+    m_FLTK_Window->size_range( 640, 420 );
 
     m_FLTK_Window->callback( staticCloseCB, this );
 
@@ -104,12 +100,13 @@ MainVSPScreen::MainVSPScreen( ScreenMgr* mgr ) : ActionScreen( mgr )
     m_FLTK_Window->add( grp );
     m_GenLayout.SetGroupAndScreen( grp, this );
 
-    m_MenuBar = m_GenLayout.AddFlMenuBar( 30 );
+    m_MenuBar = m_GenLayout.AddFlMenuBar( 26 );
 
-    m_NewMenuItem.Init( this, m_MenuBar, "File/New" );
-    m_OpenMenuItem.Init( this, m_MenuBar, "File/Open..." );
+    m_NewMenuItem.Init( this, m_MenuBar, "File/New Project", FL_COMMAND + 'n' );
+    m_OpenMenuItem.Init( this, m_MenuBar, "File/Open Project...", FL_COMMAND + 'o' );
+    m_CloseProjectMenuItem.Init( this, m_MenuBar, "File/Close Project", FL_COMMAND + 'w' );
     m_SaveMenuItem.Init( this, m_MenuBar, "File/Save...", FL_COMMAND + 's' );
-    m_SaveAsMenuItem.Init( this, m_MenuBar, "File/Save As..." );
+    m_SaveAsMenuItem.Init( this, m_MenuBar, "File/Save As...", FL_COMMAND + FL_SHIFT + 's' );
     m_SaveSetMenuItem.Init( this, m_MenuBar, "File/Save Set..." );
     m_InsertMenuItem.Init( this, m_MenuBar, "File/Insert..." );
     m_ImportMenuItem.Init( mgr, m_MenuBar, "File/Import...", vsp::VSP_IMPORT_SCREEN );
@@ -197,7 +194,11 @@ MainVSPScreen::MainVSPScreen( ScreenMgr* mgr ) : ActionScreen( mgr )
 
 
     // m_AboutMenuItem.Init( mgr, m_MenuBar, "Help/About...", ScreenMgr:: );
+    m_NextProjectMenuItem.Init( this, m_MenuBar, "Window/Next Project", FL_CTRL + FL_Tab );
+    m_PreviousProjectMenuItem.Init( this, m_MenuBar, "Window/Previous Project", FL_CTRL + FL_SHIFT + FL_Tab );
+    m_ToggleSidebarMenuItem.Init( this, m_MenuBar, "Window/Toggle Sidebar", FL_COMMAND + 'b' );
     m_FieldGuideMenuItem.Init( this, m_MenuBar, "Help/Field Guide..." );
+    m_RisksMenuItem.Init( this, m_MenuBar, "Help/Risks and Limitations..." );
     m_OnlineHelpMenuItem.Init( this, m_MenuBar, "Help/Reference Manual..." );
     // m_VersionMenuItem.Init( mgr, m_MenuBar, "Help/Check Latest Version...", ScreenMgr:: );
 
@@ -214,36 +215,51 @@ MainVSPScreen::MainVSPScreen( ScreenMgr* mgr ) : ActionScreen( mgr )
     BoldEntries( "Undo" );
     BoldEntries( "Help" );
 
-    int glh = m_GenLayout.GetRemainY() - GL_WINDOW_DY;
-    int glw = m_GenLayout.GetW() - GL_WINDOW_DX;
+    grp->begin();
+    m_Workspace = new QaspWorkspace( 0, 26, w_allow, h_allow - 44 );
+    Fl_Group *canvas = m_Workspace->Canvas();
+    m_GlWin = new VSPGUI::VspGlWindow( canvas->x(), canvas->y(), canvas->w(), canvas->h(),
+                                     mgr, DrawObj::VSP_MAIN_SCREEN );
+    m_Workspace->SetViewport( m_GlWin );
+    m_Workspace->OnAction( [this]( int action ) { WorkspaceAction( action ); } );
+    m_Workspace->OnSelectTab( [this]( std::size_t index ) { SelectProject( index ); } );
+    m_Workspace->OnCloseTab( [this]( std::size_t index ) { CloseProject( index ); } );
 
-    m_GlWin = new VSPGUI::VspGlWindow( m_GenLayout.GetX(), m_GenLayout.GetY(), glw, glh, mgr, DrawObj::VSP_MAIN_SCREEN );
+    grp->begin();
+    m_GlWin->setWindowLayout( 1, 1 );
 
-    m_GenLayout.GetGroup()->add( m_GlWin );
-    m_GenLayout.GetGroup()->resizable( m_GlWin );
-    m_GenLayout.AddY( glh );
-
-    int filew = m_GenLayout.GetW() * .6;
-
-    m_FileNameBox = new Fl_Box(m_GenLayout.GetX(), m_GenLayout.GetY(), filew, 20, "File Name:");
-    m_FileNameBox->box(FL_EMBOSSED_FRAME);
-    m_FileNameBox->labelsize(15);
-    m_FileNameBox->align( Fl_Align( FL_ALIGN_CLIP | FL_ALIGN_RIGHT | FL_ALIGN_INSIDE ) );
-
-
-    m_GenLayout.AddX( filew );
-
-    m_TitleBox = new Fl_Box(m_GenLayout.GetX(), m_GenLayout.GetY(), m_GenLayout.GetRemainX(), 20, VSPVERSION3 );
-    m_TitleBox->box(FL_EMBOSSED_BOX);
-    m_TitleBox->labeltype(FL_EMBOSSED_LABEL);
-    m_TitleBox->labelsize(15);
-    m_TitleBox->labelcolor(FL_DARK_BLUE);
-    m_TitleBox->align(Fl_Align(FL_ALIGN_CLIP));
+    // Compact 18-pixel strip, not a second large filename dock.
+    int filew = static_cast<int>( w_allow * 0.74 );
+    m_FileNameBox = new Fl_Box( 0, h_allow - 18, filew, 18 );
+    m_FileNameBox->box( FL_FLAT_BOX );
+    m_FileNameBox->color( fl_rgb_color( 233, 238, 245 ) );
+    m_FileNameBox->labelsize( 11 );
+    m_FileNameBox->labelcolor( fl_rgb_color( 73, 88, 108 ) );
+    m_FileNameBox->align( FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_CLIP );
+    m_TitleBox = new Fl_Box( filew, h_allow - 18, w_allow - filew, 18, "QASP  |  Conceptual design  |  AS IS" );
+    m_TitleBox->box( FL_FLAT_BOX );
+    m_TitleBox->color( fl_rgb_color( 233, 238, 245 ) );
+    m_TitleBox->labelsize( 10 );
+    m_TitleBox->labelcolor( fl_rgb_color( 73, 88, 108 ) );
+    m_TitleBox->align( FL_ALIGN_RIGHT | FL_ALIGN_INSIDE | FL_ALIGN_CLIP );
+    grp->end();
+    grp->resizable( m_Workspace );
+    m_FLTK_Window->resizable( grp );
+    m_FLTK_Window->end();
 }
 
 MainVSPScreen::~MainVSPScreen()
 {
+    m_Projects.reset();
+    m_ProjectHost.reset();
+    // The GL window removes itself from the canvas; hosted screen windows are
+    // detached (or already deleted by their owners) before the workspace dies.
     delete m_GlWin;
+    m_GlWin = nullptr;
+    delete m_Workspace;
+    m_Workspace = nullptr;
+    delete m_FLTK_Window;
+    m_FLTK_Window = nullptr;
 }
 
 //==== Show Main VSP Screen ====//
@@ -312,11 +328,37 @@ bool MainVSPScreen::Update()
         }
     }
 
-    // Not sure all three of these are needed.
+    EnsureProjectSession();
+    if ( m_Projects && !m_Projects->IsOperating() )
+    {
+        const auto ids = veh->GetGeomVec();
+        for ( const auto &id : ids )
+        {
+            if ( std::find( m_LastGeometryIDs.begin(), m_LastGeometryIDs.end(), id ) == m_LastGeometryIDs.end() )
+            { m_AutoFitRequested = true; break; }
+        }
+    }
+    if ( m_AutoFitRequested )
+    {
+        std::string busyReason;
+        if ( !m_ProjectHost || !m_ProjectHost->Busy( busyReason ) )
+        {
+            m_AutoFitRequested = false;
+            veh->Update();
+            FitView( true );
+        }
+    }
     m_GlWin->update();
     m_GlWin->redraw();
-
-    SetFileLabel( VehicleMgr.GetVehicle()->GetVSP3FileName() );
+    if ( m_Projects && !m_Projects->IsOperating() )
+    {
+        if ( m_LastObservedParmChanges >= 0 &&
+             ( m_LastObservedParmChanges != ParmMgr.GetNumParmChanges() || m_LastModelNames != QaspModelNames( veh ) ) )
+        { m_Projects->MarkPossiblyChanged(); }
+        RefreshProjects( false );
+    }
+    else { SetFileLabel( veh->GetVSP3FileName() ); }
+    m_Workspace->Synchronize();
 
     m_AxisMenuItem.Update( m_ShowXYZArrow );
     m_BorderMenuItem.Update( m_ShowBorder );
@@ -375,71 +417,392 @@ void MainVSPScreen::CloseCallBack( Fl_Widget *w )
 
 void MainVSPScreen::SetFileLabel( const string &fname )
 {
-    // In status bar at bottom of screen, full path to file.
-    string label = "File Name: ";
-    label.append( fname );
+    string label = "  " + fname;
     m_FileNameBox->copy_label( label.c_str() );
+    m_FileNameBox->copy_tooltip( fname.c_str() );
+    if ( !m_Projects )
+    {
+        string title = string( VSPVERSION2 ) + " — " + GetFilename( fname );
+        m_FLTK_Window->copy_label( title.c_str() );
+    }
+}
 
-    // In menu bar, file name only.
-    string title = string( VSPVERSION2 ) + "     " + GetFilename( fname );
+namespace
+{
+std::string QaspModelNames( Vehicle *vehicle )
+{
+    std::string value = vehicle->GetName();
+    for ( const std::string &id : vehicle->GetGeomVec() )
+    {
+        value += '\0'; value += id;
+        if ( Geom *geom = vehicle->FindGeom( id ) ) { value += '\0'; value += geom->GetName(); }
+    }
+    return value;
+}
+void QaspClearReadOnlyOutput( Fl_Group *group )
+{
+    if ( !group ) { return; }
+    for ( int i = 0; i < group->children(); ++i )
+    {
+        Fl_Widget *widget = group->child( i );
+        if ( auto *terminal = dynamic_cast<Fl_Terminal *>( widget ) )
+        { terminal->clear(); terminal->clear_history(); }
+        else if ( auto *display = dynamic_cast<Fl_Text_Display *>( widget ) )
+        {
+            // Never clear an editor/notes field, which can write back into a model.
+            if ( !dynamic_cast<Fl_Text_Editor *>( widget ) && display->buffer() )
+            { display->buffer()->text( "" ); }
+        }
+        else if ( widget->as_group() && !widget->as_gl_window() ) { QaspClearReadOnlyOutput( widget->as_group() ); }
+    }
+}
+}
+
+void MainVSPScreen::InitializeWorkspace()
+{
+    if ( m_WorkspaceInitialized || !m_Workspace ) { return; }
+    m_WorkspaceInitialized = true;
+    auto *browser = dynamic_cast<ManageGeomScreen *>( m_ScreenMgr->GetScreen( vsp::VSP_MANAGE_GEOM_SCREEN ) );
+    if ( browser )
+    {
+        if ( auto *window = browser->GetVSPWindow() )
+        { window->SetGeomScreenFlag( false ); window->SetParent( nullptr ); }
+        m_Workspace->ComponentsArea()->Host( browser->GetFlWindow() );
+        for ( VspScreen *screen : browser->GetGeomScreenVec() )
+        {
+            if ( auto *window = screen->GetVSPWindow() )
+            { window->SetGeomScreenFlag( false ); window->SetParent( nullptr ); }
+            m_Workspace->PropertiesArea()->Host( screen->GetFlWindow() );
+        }
+    }
+    if ( VspScreen *screen = m_ScreenMgr->GetScreen( vsp::VSP_VEH_SCREEN ) )
+    {
+        if ( auto *window = screen->GetVSPWindow() )
+        { window->SetGeomScreenFlag( false ); window->SetParent( nullptr ); }
+        m_Workspace->PropertiesArea()->Host( screen->GetFlWindow() );
+    }
+    if ( m_ScreenMgr->IsGUIScreenDisabled( vsp::VSP_MANAGE_GEOM_SCREEN ) )
+    {
+        if ( VspScreen *alternate = m_ScreenMgr->GetScreen( vsp::VSP_NERF_MANAGE_GEOM_SCREEN ) )
+        { m_Workspace->ComponentsArea()->Host( alternate->GetFlWindow() ); }
+    }
+    // Keep the drawing area open by default. The left icons reveal the tree
+    // or editor on demand; Ctrl+B restores the last panel and toggles it closed.
+    m_Workspace->HidePanel();
+    if ( !VehicleMgr.GetVehicle()->GetGeomVec().empty() ) { FitView( true ); }
+    EnsureProjectSession();
+}
+
+void MainVSPScreen::EnsureProjectSession()
+{
+    if ( m_Projects ) { return; }
+    if ( !m_ProjectHost ) { m_ProjectHost.reset( new QaspVehicleProjectHost( *m_ScreenMgr, *this ) ); }
+    std::string error;
+    if ( m_ProjectHost->Busy( error ) ) { return; }
+    m_Projects.reset( new QaspProjectSession( *m_ProjectHost ) );
+    std::string file = VehicleMgr.GetVehicle()->GetVSP3FileName();
+    if ( file == "Unnamed.vsp3" ) { file.clear(); }
+    // A startup file may already have been altered by a command-line script.
+    // There is no trustworthy pre-script baseline; conservatively offer Save.
+    bool unsavedModel = !VehicleMgr.GetVehicle()->GetGeomVec().empty();
+    if ( !m_Projects->Adopt( file, error, unsavedModel ) )
+    {
+        m_ScreenMgr->Alert( "Project tabs cannot allocate a complete working copy. "
+            "Your current model is still active; save it explicitly.\n" + error );
+    }
+    RefreshProjects();
+}
+
+bool MainVSPScreen::ProjectReady()
+{
+    EnsureProjectSession();
+    std::string error;
+    if ( m_ProjectHost->Busy( error ) ) { m_ScreenMgr->Alert( error ); return false; }
+    if ( !m_Projects || m_Projects->IsOperating() ) { return false; }
+    if ( m_Projects->RecoveryRequired() )
+    {
+        m_ScreenMgr->Alert( "A project restore failed. Do not overwrite an original file. "
+            "Keep the working copies for recovery:\n" + m_Projects->WorkingDirectory().generic_u8string() );
+        return false;
+    }
+    // Commit a pending typed numeric/name field before taking a snapshot. A
+    // keyboard shortcut must not save the previous value while text is uncommitted.
+    if ( auto *input = dynamic_cast<Fl_Input_ *>( Fl::focus() ) )
+    {
+        if ( input->changed() ) { input->do_callback(); }
+    }
+    return true;
+}
+
+void MainVSPScreen::RefreshProjects( bool requestUpdate )
+{
+    if ( !m_Projects || m_Projects->Projects().empty() ) { return; }
+    std::vector<QaspTabLabel> labels;
+    for ( const QaspProject &project : m_Projects->Projects() )
+    {
+        bool dirty = project.dirty || project.possiblyChanged;
+        labels.push_back( { project.title, project.file.empty() ? project.title + " — not explicitly saved" : project.file, dirty } );
+    }
+    m_Workspace->SetTabs( labels, m_Projects->ActiveIndex() );
+    const QaspProject &active = m_Projects->Active();
+    SetFileLabel( active.file.empty() ? "Unsaved — " + active.title : active.file );
+    std::string title = "QASP — " + active.title + ( active.dirty || active.possiblyChanged ? " *" : "" );
     m_FLTK_Window->copy_label( title.c_str() );
+    m_Workspace->SetProjectCaption( std::to_string( VehicleMgr.GetVehicle()->GetGeomVec().size() ) + " components  |  " + active.title );
+    m_LastObservedParmChanges = ParmMgr.GetNumParmChanges();
+    m_LastModelNames = QaspModelNames( VehicleMgr.GetVehicle() );
+    m_LastGeometryIDs = VehicleMgr.GetVehicle()->GetGeomVec();
+    m_Workspace->Synchronize();
+    if ( requestUpdate ) { m_ScreenMgr->SetUpdateFlag( true ); }
+}
+
+bool MainVSPScreen::ConfirmProjectReload()
+{
+    if ( m_ReloadAcknowledged ) { return true; }
+    int answer = fl_choice( "%s", "Cancel", "Continue", nullptr,
+        "Each tab keeps its own model and project settings. Only one model is active in the engine.\n\n"
+        "Changing projects reloads the engine and clears generated results/mesh previews, parameter undo, "
+        "and the clipboard. Export any results you need first.\n\n"
+        "Working snapshots are not guaranteed autosave or crash recovery. Save project files deliberately." );
+    m_ReloadAcknowledged = answer == 1;
+    return m_ReloadAcknowledged;
+}
+
+void MainVSPScreen::ShowWorkspacePanel( int panel )
+{
+    if ( !m_Workspace ) { return; }
+    m_Workspace->ShowPanel( static_cast<QaspWorkspace::Panel>( panel ) );
+    if ( panel == QaspWorkspace::Properties )
+    {
+        if ( auto *browser = dynamic_cast<ManageGeomScreen *>( m_ScreenMgr->GetScreen( vsp::VSP_MANAGE_GEOM_SCREEN ) ) )
+        { browser->SetNeedsShowHideGeoms(); }
+    }
+    m_ScreenMgr->SetUpdateFlag( true );
+}
+
+void MainVSPScreen::RequestAutoFit()
+{
+    m_AutoFitRequested = true;
+    if ( m_Projects ) { m_Projects->MarkPossiblyChanged(); }
+    m_ScreenMgr->SetUpdateFlag( true );
+}
+
+void MainVSPScreen::PrepareProjectChange()
+{
+    m_AutoFitRequested = false;
+    m_ScreenMgr->m_ShowPlotScreenOnce = false;
+    m_GlWin->ResetDrawObjsGeomChangedFlags( true );
+    m_GlWin->clearScene();
+    for ( VspScreen *screen : m_ScreenMgr->GetAllScreens() )
+    {
+        if ( !screen || screen == this || screen->GetScreenType() == vsp::VSP_COR_SCREEN ) { continue; }
+        screen->ResetProjectBinding();
+        if ( screen->GetScreenType() != vsp::VSP_MANAGE_GEOM_SCREEN && screen->GetScreenType() != vsp::VSP_NERF_MANAGE_GEOM_SCREEN )
+        { screen->Hide(); QaspClearReadOnlyOutput( screen->GetFlWindow() ); }
+    }
+    if ( auto *browser = dynamic_cast<ManageGeomScreen *>( m_ScreenMgr->GetScreen( vsp::VSP_MANAGE_GEOM_SCREEN ) ) )
+    {
+        browser->ResetProjectSelection();
+        for ( VspScreen *screen : browser->GetGeomScreenVec() ) { screen->ResetProjectBinding(); screen->Hide(); }
+    }
+}
+
+std::string MainVSPScreen::CaptureProjectView()
+{
+    m_GlWin->UpdateAllViewParms();
+    auto *layout = m_GlWin->getGraphicEngine()->getDisplay()->getLayoutMgr();
+    std::vector<VSPGraphic::Viewport *> views = layout->getViewports();
+    int selected = 0;
+    for ( std::size_t i = 0; i < views.size(); ++i ) { if ( views[i] == layout->getViewport() ) { selected = static_cast<int>( i ); } }
+    std::ostringstream out;
+    out.imbue( std::locale::classic() ); out << std::setprecision( 17 );
+    out << "1 " << layout->row() << ' ' << layout->column() << ' ' << selected << ' ' << m_ShowXYZArrow << ' ' << m_ShowBorder;
+    for ( auto *view : views )
+    {
+        auto *camera = view->getCamera();
+        glm::vec3 cor = camera->getCOR(), rotation = camera->getRotationEulerAngles();
+        glm::vec2 pan = camera->getPanValues();
+        out << ' ' << cor.x << ' ' << cor.y << ' ' << cor.z << ' ' << pan.x << ' ' << pan.y << ' '
+            << camera->getRelativeZoomValue() << ' ' << rotation.x << ' ' << rotation.y << ' ' << rotation.z;
+    }
+    return out.str();
+}
+
+void MainVSPScreen::RestoreProjectView( const std::string &view )
+{
+    std::istringstream in( view ); in.imbue( std::locale::classic() );
+    int version, rows, columns, selected; bool axis, borders;
+    if ( !( in >> version >> rows >> columns >> selected >> axis >> borders ) || version != 1 ||
+         rows < 1 || rows > 2 || columns < 1 || columns > 2 || selected < 0 || selected >= rows * columns ) { return; }
+    std::vector<std::vector<double>> values;
+    for ( int i = 0; i < rows * columns; ++i )
+    {
+        std::vector<double> camera( 9 );
+        for ( double &value : camera ) { if ( !( in >> value ) || !std::isfinite( value ) ) { return; } }
+        if ( camera[5] <= 0 ) { return; }
+        values.push_back( camera );
+    }
+    SetWindowLayout( rows, columns ); SetViewAxis( axis ); SetShowBorders( borders );
+    auto *layout = m_GlWin->getGraphicEngine()->getDisplay()->getLayoutMgr();
+    auto views = layout->getViewports();
+    for ( std::size_t i = 0; i < values.size(); ++i )
+    {
+        auto *camera = views[i]->getCamera(); const auto &v = values[i];
+        camera->setCOR( v[0], v[1], v[2] ); camera->relativePan( v[3], v[4] );
+        camera->relativeZoom( v[5] ); camera->rotateSphere( v[6], v[7], v[8] );
+    }
+    layout->selectViewport( selected ); m_GlWin->UpdateAllViewParms();
+    VehicleMgr.GetVehicle()->m_ViewDirty = false;
+}
+
+bool MainVSPScreen::SaveProject( bool saveAs )
+{
+    if ( !ProjectReady() ) { return false; }
+    const QaspProject &project = m_Projects->Active();
+    std::string file = saveAs ? "" : project.file;
+    if ( file.empty() )
+    {
+        file = m_ScreenMgr->FileChooser( saveAs ? "Save Project As" : "Save Project", "*.vsp3", vsp::SAVE, project.title );
+        if ( file.empty() ) { return false; } // Cancel is never permission to close.
+    }
+    std::string error;
+    if ( !m_Projects->Save( file, error ) ) { m_ScreenMgr->Alert( error ); RefreshProjects(); return false; }
+    if ( !m_Projects->Warning().empty() ) { m_ScreenMgr->Alert( m_Projects->Warning() ); }
+    RefreshProjects();
+    return true;
 }
 
 void MainVSPScreen::NewModel()
 {
-    switch( fl_choice("New will lose any changes.  Do you want to proceed (discarding changes) or save?", "Cancel", "Discard", "Save") )
+    if ( !ProjectReady() || !ConfirmProjectReload() ) { return; }
+    std::string error;
+    if ( !m_Projects->New( error ) ) { m_ScreenMgr->Alert( error ); }
+    RefreshProjects();
+}
+
+void MainVSPScreen::OpenProject()
+{
+    if ( !ProjectReady() ) { return; }
+    std::string file = m_ScreenMgr->FileChooser( "Open Project in a Tab", "*.vsp3" );
+    if ( file.empty() || !ConfirmProjectReload() ) { return; }
+    std::string error;
+    if ( !m_Projects->Open( file, error ) ) { m_ScreenMgr->Alert( error ); }
+    else if ( VehicleMgr.GetVehicle()->m_ShowNotesScreenParm.Get() ) { m_ScreenMgr->ShowScreen( vsp::VSP_VEH_NOTES_SCREEN ); }
+    RefreshProjects();
+}
+
+bool MainVSPScreen::SelectProject( std::size_t index )
+{
+    if ( !ProjectReady() || index >= m_Projects->Projects().size() ) { return false; }
+    if ( index == m_Projects->ActiveIndex() ) { return true; }
+    if ( !ConfirmProjectReload() ) { return false; }
+    std::string error;
+    bool ok = m_Projects->Switch( index, error );
+    if ( !ok ) { m_ScreenMgr->Alert( error ); }
+    else if ( !m_Projects->Warning().empty() ) { m_ScreenMgr->Alert( m_Projects->Warning() ); }
+    RefreshProjects();
+    return ok;
+}
+
+void MainVSPScreen::CloseProject( std::size_t index )
+{
+    if ( !ProjectReady() || index >= m_Projects->Projects().size() ) { return; }
+    std::string error;
+    if ( index != m_Projects->ActiveIndex() )
     {
-        case(0):  // Cancel
-            return;
-
-        case(1):  // Discard
-            break;
-
-        case(2):  // Save
-            string savefile = VehicleMgr.GetVehicle()->GetVSP3FileName();
-
-            if ( savefile.compare( "Unnamed.vsp3" ) == 0 )
-            {
-                savefile = m_ScreenMgr->FileChooser( "Save VSP File", "*.vsp3", vsp::SAVE );
-            }
-
-            if ( savefile.compare( "" ) != 0 )
-            {
-                VehicleMgr.GetVehicle()->SetVSP3FileName( savefile );
-                VehicleMgr.GetVehicle()->WriteXMLFile( savefile, SET_ALL );
-            }
+        const QaspProject &target = m_Projects->Projects()[index];
+        int answer = 1; // A known-clean inactive tab needs no engine reload.
+        if ( target.dirty || target.possiblyChanged )
+        {
+            std::string prompt = "Save changes to " + target.title + " before closing this project?";
+            answer = fl_choice( "%s", "Cancel", "Discard", "Save", prompt.c_str() );
+        }
+        if ( answer == 0 ) { return; }
+        if ( answer == 1 )
+        {
+            if ( !m_Projects->DiscardInactive( index, error ) ) { m_ScreenMgr->Alert( error ); }
+            RefreshProjects(); return;
+        }
+        if ( !SelectProject( index ) || !SaveProject() ) { return; }
     }
-
-    VehicleMgr.GetVehicle()->Renew();
-
-    m_GlWin->getGraphicEngine()->getDisplay()->setCOR( 0.0, 0.0, 0.0 );
+    if ( !m_Projects->Checkpoint( error ) ) { m_ScreenMgr->Alert( error ); return; }
+    if ( m_Projects->Active().dirty )
+    {
+        std::string prompt = "Save changes to " + m_Projects->Active().title + " before closing this project?";
+        int answer = fl_choice( "%s", "Cancel", "Discard", "Save", prompt.c_str() );
+        if ( answer == 0 || ( answer == 2 && !SaveProject() ) ) { return; }
+    }
+    if ( !ConfirmProjectReload() ) { return; }
+    if ( !m_Projects->CloseActive( error ) ) { m_ScreenMgr->Alert( error ); }
+    RefreshProjects();
 }
 
 void MainVSPScreen::ExitVSP()
 {
-    switch( fl_choice("VSP is exiting. Save or discard your changes.", "Cancel", "Discard", "Save") )
+    EnsureProjectSession();
+    if ( m_Projects && m_Projects->RecoveryRequired() )
     {
-        case(0):
-            return;
-
-        case(1):
-            exit( 0 );
-
-        case(2):
-            string savefile = VehicleMgr.GetVehicle()->GetVSP3FileName();
-
-            if ( savefile.compare( "Unnamed.vsp3" ) == 0 )
-            {
-                savefile = m_ScreenMgr->FileChooser( "Save VSP File", "*.vsp3", vsp::SAVE );
-            }
-
-            if ( savefile.compare( "" ) != 0 )
-            {
-                VehicleMgr.GetVehicle()->SetVSP3FileName( savefile );
-                VehicleMgr.GetVehicle()->WriteXMLFile( savefile, SET_ALL );
-                exit( 0 );
-            }
+        std::string prompt = "A project restore failed. Do not overwrite original files. Working copies remain in:\n" +
+            m_Projects->WorkingDirectory().generic_u8string() + "\n\nExit without saving the uncertain active model?";
+        if ( fl_choice( "%s", "Cancel", "Exit without saving", nullptr, prompt.c_str() ) == 1 ) { exit( 0 ); }
+        return;
     }
+    if ( !ProjectReady() ) { return; }
+    std::string error;
+    if ( !m_Projects->Checkpoint( error ) )
+    {
+        std::string prompt = "Cannot check or cache the current work:\n" + error +
+            "\n\nExit anyway? Unsaved changes in ANY tab may be lost. Choose Cancel to try saving explicitly.";
+        if ( fl_choice( "%s", "Cancel", "Exit without saving", nullptr, prompt.c_str() ) != 1 ) { return; }
+        // Preserve any working copies on this failure path; no cleanup claim.
+        exit( 0 );
+    }
+    std::size_t original = m_Projects->ActiveIndex();
+    // Do not close/delete any tab on an intermediate Discard: the user may
+    // still Cancel on a later project or cancel that project's save dialog.
+    for ( std::size_t i = 0; i < m_Projects->Projects().size(); ++i )
+    {
+        if ( !m_Projects->Projects()[i].dirty ) { continue; }
+        if ( !SelectProject( i ) )
+        {
+            if ( fl_choice( "%s", "Cancel", "Exit without saving", nullptr,
+                 "One project could not be loaded for saving. Exit anyway? Unsaved changes in ANY tab may be lost. "
+                 "Working copies will be retained rather than deliberately deleted." ) == 1 ) { exit( 0 ); }
+            return;
+        }
+        std::string prompt = "QASP is exiting. Save changes to " + m_Projects->Active().title + "?";
+        int answer = fl_choice( "%s", "Cancel", "Discard", "Save", prompt.c_str() );
+        if ( answer == 0 || ( answer == 2 && !SaveProject() ) )
+        { SelectProject( original ); return; }
+    }
+    m_Projects->CleanExit();
+    exit( 0 );
+}
+
+void MainVSPScreen::WorkspaceAction( int action )
+{
+    switch ( action )
+    {
+    case QaspWorkspace::NewProject: NewModel(); break;
+    case QaspWorkspace::OpenProject: OpenProject(); break;
+    case QaspWorkspace::SaveProject: SaveProject(); break;
+    case QaspWorkspace::FitModel: FitView( true ); break;
+    case QaspWorkspace::TopView: SetView( VSPGraphic::Common::VSP_CAM_TOP ); break;
+    case QaspWorkspace::FrontView: SetView( VSPGraphic::Common::VSP_CAM_FRONT ); break;
+    case QaspWorkspace::IsoView: SetView( VSPGraphic::Common::VSP_CAM_LEFT_ISO ); break;
+    case QaspWorkspace::FieldGuide: QaspFieldGuide::Show(); break;
+    case QaspWorkspace::MassProperties: m_ScreenMgr->ShowScreen( vsp::VSP_MASS_PROP_SCREEN ); break;
+    case QaspWorkspace::ParasiteDrag: m_ScreenMgr->ShowScreen( vsp::VSP_PARASITE_DRAG_SCREEN ); break;
+    case QaspWorkspace::VSPAERO: m_ScreenMgr->ShowScreen( vsp::VSP_VSPAERO_SCREEN ); break;
+    case QaspWorkspace::CFDMesh: m_ScreenMgr->ShowScreen( vsp::VSP_CFD_MESH_SCREEN ); break;
+    case QaspWorkspace::Structures: m_ScreenMgr->ShowScreen( vsp::VSP_STRUCT_SCREEN ); break;
+    case QaspWorkspace::Properties:
+        if ( auto *browser = dynamic_cast<ManageGeomScreen *>( m_ScreenMgr->GetScreen( vsp::VSP_MANAGE_GEOM_SCREEN ) ) )
+        { browser->SetNeedsShowHideGeoms(); }
+        break;
+    default: break;
+    }
+    m_ScreenMgr->SetUpdateFlag( true );
 }
 
 void MainVSPScreen::ActionCB( void * data )
@@ -451,72 +814,66 @@ void MainVSPScreen::ActionCB( void * data )
     {
         NewModel();
     }
-    else if ( data == &m_OpenMenuItem )
+    else if ( data == &m_OpenMenuItem ) { OpenProject(); }
+    else if ( data == &m_CloseProjectMenuItem )
     {
-        string openfile = m_ScreenMgr->FileChooser( "Open VSP File", "*.vsp3" );
-        if ( openfile.compare( "" ) != 0 )
+        EnsureProjectSession();
+        if ( m_Projects ) { CloseProject( m_Projects->ActiveIndex() ); }
+    }
+    else if ( data == &m_NextProjectMenuItem || data == &m_PreviousProjectMenuItem )
+    {
+        EnsureProjectSession();
+        if ( m_Projects )
         {
-            VehicleMgr.GetVehicle()->Renew();
-            VehicleMgr.GetVehicle()->SetVSP3FileName( openfile );
-            VehicleMgr.GetVehicle()->ReadXMLFile( openfile );
-
-            if ( VehicleMgr.GetVehicle()->m_ShowNotesScreenParm.Get() )
-            {
-                m_ScreenMgr->ShowScreen( vsp::VSP_VEH_NOTES_SCREEN );
-            }
-
-            BndBox bbox = VehicleMgr.GetVehicle()->GetBndBox();
-            vec3d p = bbox.GetCenter();
-            m_GlWin->getGraphicEngine()->getDisplay()->setCOR( (float)-p.x(), (float)-p.y(), (float)-p.z() );
+            std::size_t count = m_Projects->Projects().size();
+            std::size_t offset = data == &m_NextProjectMenuItem ? 1 : count - 1;
+            SelectProject( ( m_Projects->ActiveIndex() + offset ) % count );
         }
     }
-    else if ( data == &m_SaveMenuItem )
+    else if ( data == &m_ToggleSidebarMenuItem )
     {
-        string savefile = VehicleMgr.GetVehicle()->GetVSP3FileName();
-
-        if ( savefile.compare( "Unnamed.vsp3" ) == 0 )
-        {
-            savefile = m_ScreenMgr->FileChooser( "Save VSP File", "*.vsp3", vsp::SAVE, savefile );
-        }
-
-        if ( savefile.compare( "" ) != 0 )
-        {
-            VehicleMgr.GetVehicle()->SetVSP3FileName( savefile );
-            VehicleMgr.GetVehicle()->WriteXMLFile( savefile, vsp::SET_ALL );
-        }
+        m_Workspace->ToggleSidebar();
     }
-    else if ( data == &m_SaveAsMenuItem )
-    {
-        string preset_fname = GetFilename( VehicleMgr.GetVehicle()->GetVSP3FileName() );
-        string savefile = m_ScreenMgr->FileChooser( "Save VSP File As", "*.vsp3", vsp::SAVE, preset_fname );
-        if ( savefile.compare( "" ) != 0 )
-        {
-            VehicleMgr.GetVehicle()->SetVSP3FileName( savefile );
-            VehicleMgr.GetVehicle()->WriteXMLFile( savefile, vsp::SET_ALL );
-        }
-    }
+    else if ( data == &m_SaveMenuItem ) { SaveProject(); }
+    else if ( data == &m_SaveAsMenuItem ) { SaveProject( true ); }
     else if ( data == &m_SaveSetMenuItem )
     {
+        if ( !ProjectReady() ) { return; }
         int set = m_ScreenMgr->GetPickSetScreen()->PickSet( "Pick Save Set" );
-
-        if( set >= 0 )
+        if ( set >= 0 )
         {
-            string savefile = m_ScreenMgr->FileChooser( "Save VSP Set File As", "*.vsp3", vsp::SAVE );
-            if ( savefile.compare( "" ) != 0 )
+            string file = m_ScreenMgr->FileChooser( "Save VSP Set File As", "*.vsp3", vsp::SAVE );
+            if ( !file.empty() )
             {
-                string oldfile = VehicleMgr.GetVehicle()->GetVSP3FileName();
-                VehicleMgr.GetVehicle()->SetVSP3FileName( savefile );
-                VehicleMgr.GetVehicle()->WriteXMLFile( savefile, set );
-                VehicleMgr.GetVehicle()->SetVSP3FileName( oldfile );
+                if ( m_Projects->IsOpenFile( file ) )
+                {
+                    m_ScreenMgr->Alert( "Save Set exports only selected components. Choose a filename that is not an open full project." );
+                    return;
+                }
+                std::string error;
+                bool saved = QaspWriteFileAtomically( std::filesystem::u8path( file ),
+                    [&]( const std::filesystem::path &stage, std::string &err )
+                    {
+                        bool ok = VehicleMgr.GetVehicle()->WriteXMLFileWithBase( stage.generic_u8string(), file, set );
+                        if ( !ok ) { err = "The selected set could not be written."; return false; }
+                        return m_ProjectHost->Validate( stage, err );
+                    }, error );
+                if ( !saved ) { m_ScreenMgr->Alert( error ); }
             }
         }
     }
     else if ( data == &m_InsertMenuItem )
     {
+        if ( !ProjectReady() ) { return; }
         string openfile = m_ScreenMgr->FileChooser( "Insert VSP File", "*.vsp3" );
         if ( openfile.compare( "" ) != 0 )
         {
-            VehicleMgr.GetVehicle()->ReadXMLFileGeomsOnly( openfile );
+            std::string error;
+            if ( !m_ProjectHost->Validate( std::filesystem::u8path( openfile ), error ) || !m_Projects->Checkpoint( error ) )
+            { m_ScreenMgr->Alert( error ); }
+            else if ( VehicleMgr.GetVehicle()->ReadXMLFileGeomsOnly( openfile ) != 0 )
+            { m_ScreenMgr->Alert( "Insert failed. The last working snapshot was retained; do not overwrite your original if the model looks incomplete." ); }
+            else { RequestAutoFit(); }
         }
     }
     // else if ( data == &m_SetTempDirMenuItem )
@@ -524,10 +881,13 @@ void MainVSPScreen::ActionCB( void * data )
     // }
     else if ( data == &m_RunScriptMenuItem )
     {
+        if ( !ProjectReady() ) { return; }
         string scriptfile = m_ScreenMgr->FileChooser( "Script File To Run", "*.vspscript" );
         if ( scriptfile.compare( "" ) != 0 )
         {
-            VehicleMgr.GetVehicle()->RunScript( scriptfile );
+            std::string error;
+            if ( !m_Projects->Checkpoint( error ) ) { m_ScreenMgr->Alert( error ); }
+            else { VehicleMgr.GetVehicle()->RunScript( scriptfile ); }
         }
     }
     else if ( data == &m_PreferencesMenuItem )
@@ -696,6 +1056,18 @@ void MainVSPScreen::ActionCB( void * data )
     else if ( data == &m_ResetAllViewMenuItem )
     {
         ResetViews();
+    }
+    else if ( data == &m_RisksMenuItem )
+    {
+        fl_message( "%s", "QASP is an unofficial OpenVSP modification, provided AS IS.\n\n"
+            "No promise of crash-free operation, preserved files, correct calculations, security, compatibility, "
+            "airworthiness, certification or suitability for a particular purpose. Save separate backups. "
+            "Validate inputs, units, geometry, solver assumptions and results independently.\n\n"
+            "Tabs keep separate models, not simultaneous engineering engines. Switching clears generated results, "
+            "mesh previews, undo and clipboard. Working copies are not guaranteed crash recovery.\n\n"
+            "Scripts and external tools are not sandboxed. The NOSA 1.3 licence remains unchanged; applicable "
+            "non-waivable rights are not removed.\n\n"
+            "Read RISKS_AND_LIMITATIONS.md and LICENSE in the portable folder for the full notice." );
     }
     else if ( data == &m_FieldGuideMenuItem )
     {
@@ -957,11 +1329,14 @@ void MainVSPScreen::FitView( bool all )
 
         for ( int i = 0; i < vpts.size(); i++ )
         {
-            wid = MIN( wid, vpts[i]->width() );
-            ht = MIN( ht, vpts[i]->height() );
+            if ( vpts[i]->width() > 0 ) { wid = MIN( wid, vpts[i]->width() ); }
+            if ( vpts[i]->height() > 0 ) { ht = MIN( ht, vpts[i]->height() ); }
         }
 
-        float z = d * ( wid < ht ? 1.f / wid : 1.f / ht );
+        if ( wid <= 0 || ht <= 0 || !std::isfinite( d ) || d <= 1e-12 ||
+             !std::isfinite( p.x() ) || !std::isfinite( p.y() ) || !std::isfinite( p.z() ) ) { return; }
+        float z = d * 1.08 * ( wid < ht ? 1.f / wid : 1.f / ht );
+        if ( !std::isfinite( z ) || z <= 0 ) { return; }
 
         if ( all )
         {

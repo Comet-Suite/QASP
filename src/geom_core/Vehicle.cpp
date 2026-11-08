@@ -34,6 +34,7 @@
 #include "ConformalGeom.h"
 #include "CustomGeom.h"
 #include "DesignVarMgr.h"
+#include "QaspProjectState.h"
 #include "GearGeom.h"
 #include "DXFUtil.h"
 #include "EllipsoidGeom.h"
@@ -780,14 +781,14 @@ void Vehicle::SetVSP3FileName( const string & f_name )
 {
     m_VSP3FileName = f_name;
 
-    std::filesystem::path filepath( m_VSP3FileName );
+    std::filesystem::path filepath = std::filesystem::u8path( m_VSP3FileName );
 
     if ( m_VSP3FileName != "Unnamed.vsp3" && filepath.is_relative() )
     {
         std::filesystem::path vsppath = std::filesystem::current_path();
-        vsppath /= f_name;
+        vsppath /= std::filesystem::u8path( f_name );
 
-        m_VSP3FileName = vsppath.generic_string();
+        m_VSP3FileName = vsppath.generic_u8string();
     }
 
     m_CfdSettings.ResetExportFileNames( m_VSP3FileName );
@@ -799,27 +800,29 @@ void Vehicle::SetVSP3FileName( const string & f_name )
 // Make fname into a path relative to m_VSP3ileName.
 void Vehicle::MakeRelativePath( string & fname )
 {
+    if ( fname.empty() ) { return; }
     if ( m_VSP3FileName != "Unnamed.vsp3" )
     {
-        std::filesystem::path vsppath( m_VSP3FileName );
+        std::filesystem::path vsppath = std::filesystem::u8path( m_VSP3FileName );
         vsppath.remove_filename();
-        const std::filesystem::path inpath( fname );
+        const std::filesystem::path inpath = std::filesystem::u8path( fname );
 
-        fname = std::filesystem::relative( inpath, vsppath ).generic_string();
+        fname = std::filesystem::relative( inpath, vsppath ).generic_u8string();
     }
 }
 
 // Make relative path fname into absolute path.
 void Vehicle::MakeAbsolutePath( string & fname )
 {
+    if ( fname.empty() ) { return; }
     if ( m_VSP3FileName != "Unnamed.vsp3" )
     {
-        std::filesystem::path vsppath( m_VSP3FileName );
+        std::filesystem::path vsppath = std::filesystem::u8path( m_VSP3FileName );
         vsppath.remove_filename();
 
-        vsppath /= fname; // Append with appropriate path separator.
+        vsppath /= std::filesystem::u8path( fname ); // Append with appropriate path separator.
 
-        fname = vsppath.generic_string();
+        fname = vsppath.generic_u8string();
     }
 }
 
@@ -3345,6 +3348,8 @@ xmlNodePtr Vehicle::EncodeXml( xmlNodePtr & node, int set )
         }
     }
 
+    if ( set == vsp::SET_ALL ) { QaspEncodeProjectState( node ); }
+
     return vehicle_node;
 }
 
@@ -3444,6 +3449,8 @@ xmlNodePtr Vehicle::DecodeXml( xmlNodePtr & node )
         }
     }
 
+    QaspDecodeProjectState( node );
+
     return vehicle_node;
 }
 
@@ -3518,8 +3525,10 @@ xmlNodePtr Vehicle::DecodeXmlGeomsOnly( xmlNodePtr & node )
 bool Vehicle::WriteXMLFile( const string & file_name, int set )
 {
     xmlDocPtr doc = xmlNewDoc( ( const xmlChar * )"1.0" );
+    if ( !doc ) { return false; }
 
     xmlNodePtr root = xmlNewNode( nullptr, ( const xmlChar * )"Vsp_Geometry" );
+    if ( !root ) { xmlFreeDoc( doc ); return false; }
     xmlDocSetRootElement( doc, root );
     XmlUtil::AddIntNode( root, "Version", CURRENT_FILE_VER );
 
@@ -3535,6 +3544,22 @@ bool Vehicle::WriteXMLFile( const string & file_name, int set )
     }
 
     return true;
+}
+
+// QASP working snapshots live elsewhere, but relative assets must still resolve
+// against the project's ORIGINAL filename. Do not call SetVSP3FileName here:
+// that also resets export destinations. The guard restores the base on errors.
+bool Vehicle::WriteXMLFileWithBase( const string &file_name, const string &base_file, int set )
+{
+    struct FileBaseGuard
+    {
+        string &current;
+        string previous;
+        FileBaseGuard( string &value, const string &base ) : current( value ), previous( base )
+        { current.swap( previous ); }
+        ~FileBaseGuard() { current.swap( previous ); }
+    } guard( m_VSP3FileName, base_file );
+    return WriteXMLFile( file_name, set );
 }
 
 //==== Register the identities in the trees read into newly made objects ====//
@@ -3563,6 +3588,19 @@ static void PreRegisterNewObjectIDs( xmlNodePtr node )
 int Vehicle::ReadXMLFile( const string & file_name )
 {
     string lastreset = IDMgr.ResetRemapID();
+    // QASP: every early error used to leave link updates frozen and the ID map
+    // unfinished. A failed project read must not poison a subsequent rollback.
+    struct ReadStateGuard
+    {
+        string reset;
+        bool previousFreeze;
+        bool remapRestored = false;
+        ~ReadStateGuard()
+        {
+            if ( !remapRestored ) { IDMgr.ResetRemapID( reset ); }
+            LinkMgr.SetFreezeUpdateFlag( previousFreeze );
+        }
+    } readState{ lastreset, LinkMgr.GetFreezeUpdateFlag() };
 
     // Disable link updates when until all geoms are loaded
     LinkMgr.SetFreezeUpdateFlag( true );
@@ -3625,11 +3663,12 @@ int Vehicle::ReadXMLFile( const string & file_name )
     xmlFreeDoc( doc );
 
     IDMgr.ResetRemapID( lastreset );
+    readState.remapRestored = true;
 
     Update();
     AdvLinkMgr.ForceUpdate();
 
-    LinkMgr.SetFreezeUpdateFlag( false );
+    LinkMgr.SetFreezeUpdateFlag( readState.previousFreeze );
 
     m_FileOpenVersion = -1;
     return 0;

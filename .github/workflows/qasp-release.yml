@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   help-checks:
-    name: Beginner help checks
+    name: Help and workspace checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -66,6 +66,9 @@ jobs:
 
       - name: Check copy, matching, rebinding and the actual guide window
         run: bash tools/run_qasp_help_checks.sh
+
+      - name: Check independent projects and the actual workspace widgets
+        run: bash tools/run_qasp_workspace_checks.sh
 
   build-windows:
     name: Windows x64 portable

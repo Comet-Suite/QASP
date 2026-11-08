@@ -81,6 +81,27 @@ Baseline: OpenVSP **3.56.0** (upstream commit `ca4958f2`).
 
 ---
 
+## Workspace development changes (not yet a new Windows release)
+
+- `QaspWorkspace.*`, `MainVSPScreen.*`, `ScreenMgr.cpp`: native main-window
+  component tree and editors; left activity icons open, hide and resize panels.
+  The sidebar starts closed to reclaim its 305 pixels for drawing. The toolbar
+  is 30 pixels high and the filename/status strip is 18 pixels high.
+- `QaspProjectSession.*`, `QaspVehicleProjectHost.*`: independent project working
+  snapshots and view state; staged saves, disk-conflict checks and guarded reloads.
+  One engine is active; switching clears generated results, undo and clipboard.
+  These changes still require full application and Windows runtime validation.
+- `QaspProjectState.*`, `Vehicle.*`: optional versioned design-variable/fit setup
+  persistence, logical resource bases and read cleanup. `MaterialMgr.*` isolates
+  project-specific materials. `ScreenBase.*` and `ManageGeomScreen.*` reset UI bindings.
+- `tools/test_qasp_projects.cpp`, `tools/qasp_workspace_test.cpp`: focused
+  coordinator/filesystem and real FLTK widget checks, not Windows runtime proof.
+- `RISKS_AND_LIMITATIONS.md`, `README.md`, `src/CMakeLists.txt`: substantive
+  practical risks and non-guarantees, prominently linked and installed with the
+  portable files. The NOSA 1.3 licence remains unchanged.
+
+---
+
 ## Retained from upstream, unmodified
 
 All NASA/NOSA copyright headers, the `LICENSE` file, and all third-party

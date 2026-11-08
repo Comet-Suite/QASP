@@ -79,6 +79,7 @@ ParasiteDragMgr.cpp
 Parm.cpp
 ParmContainer.cpp
 ParmMgr.cpp
+QaspProjectState.cpp
 ParmUndo.cpp
 PCurve.cpp
 PGMesh.cpp
@@ -170,6 +171,7 @@ ParasiteDragMgr.h
 Parm.h
 ParmContainer.h
 ParmMgr.h
+QaspProjectState.h
 ParmUndo.h
 PCurve.h
 PGMesh.h

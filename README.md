@@ -9,6 +9,11 @@ the parametric aircraft geometry tool developed by NASA and released under the
 QASP is **not** produced, endorsed, sponsored or supported by NASA or by the
 OpenVSP development team. Please do not report QASP problems to them.
 
+> **Experimental software — crashes, incorrect results and data loss are possible.**
+> Read [Risks, limitations and non-guarantees](RISKS_AND_LIMITATIONS.md) before
+> relying on a model, analysis or export. QASP does not certify flight safety,
+> airworthiness or a particular aircraft performance.
+
 ---
 
 ## Beginner help revision

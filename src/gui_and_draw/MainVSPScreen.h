@@ -16,6 +16,11 @@
 #include "ScreenBase.h"
 #include "GuiDevice.h"
 #include "FL/Fl_Box.H"
+#include <memory>
+
+class QaspWorkspace;
+class QaspProjectSession;
+class QaspVehicleProjectHost;
 
 namespace VSPGUI
 {
@@ -24,8 +29,6 @@ class VspGlWindow;
 
 class SelectFileScreen;
 
-#define GL_WINDOW_DX 0
-#define GL_WINDOW_DY 25
 
 class MainVSPScreen : public ActionScreen
 {
@@ -42,6 +45,15 @@ public:
     virtual void GuiDeviceCallBack( GuiDevice* device );
 
     void ResizeWindow( int pixel_w, int pixel_h );
+
+    // QASP: sidebar windows remain owned by their original screen objects.
+    void InitializeWorkspace();
+    void ShowWorkspacePanel( int panel );
+    void RequestAutoFit();
+    void PrepareProjectChange();
+    std::string CaptureProjectView();
+    void RestoreProjectView( const std::string &view );
+
 
     VSPGUI::VspGlWindow * GetGLWindow()
     {
@@ -89,11 +101,25 @@ protected:
 
     virtual void NewModel();
     virtual void ExitVSP();
+    void EnsureProjectSession();
+    void RefreshProjects( bool requestUpdate = true );
+    bool SaveProject( bool saveAs = false );
+    void OpenProject();
+    bool SelectProject( std::size_t index );
+    void CloseProject( std::size_t index );
+    void WorkspaceAction( int action );
+    bool ConfirmProjectReload();
+    bool ProjectReady();
+
 
     ActionMenuItem m_FileMenuItem;
 
     ActionMenuItem m_NewMenuItem;
     ActionMenuItem m_OpenMenuItem;
+    ActionMenuItem m_CloseProjectMenuItem;
+    ActionMenuItem m_NextProjectMenuItem;
+    ActionMenuItem m_PreviousProjectMenuItem;
+    ActionMenuItem m_ToggleSidebarMenuItem;
     ActionMenuItem m_SaveMenuItem;
     ActionMenuItem m_SaveAsMenuItem;
     ActionMenuItem m_SaveSetMenuItem;
@@ -178,6 +204,7 @@ protected:
 
     // ScreenMenuItem m_AboutMenuItem;
     ActionMenuItem m_OnlineHelpMenuItem;
+    ActionMenuItem m_RisksMenuItem;
     ActionMenuItem m_FieldGuideMenuItem;   // QASP: in-app plain-English help
     ActionMenuItem m_TestParmMapMenuItem;
     ActionMenuItem m_TestParmContainerMapMenuItem;
@@ -190,6 +217,15 @@ protected:
     VSPGUI::VspGlWindow * m_GlWin;
     Fl_Box * m_TitleBox;
     Fl_Box * m_FileNameBox;
+    QaspWorkspace *m_Workspace = nullptr;
+    std::unique_ptr<QaspVehicleProjectHost> m_ProjectHost;
+    std::unique_ptr<QaspProjectSession> m_Projects;
+    bool m_WorkspaceInitialized = false;
+    bool m_AutoFitRequested = false;
+    bool m_ReloadAcknowledged = false;
+    int m_LastObservedParmChanges = -1;
+    std::string m_LastModelNames;
+    std::vector<std::string> m_LastGeometryIDs;
 
     bool m_ShowXYZArrow;
     bool m_ShowBorder;

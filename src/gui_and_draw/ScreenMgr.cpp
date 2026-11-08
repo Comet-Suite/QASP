@@ -127,6 +127,7 @@ ScreenMgr::ScreenMgr( Vehicle* vPtr )
 //==== Destructor ====//
 ScreenMgr::~ScreenMgr()
 {
+    Fl::remove_timeout( StaticTimerCB, this );
     for ( int i = 0 ; i < ( int )m_ScreenVec.size() ; i++ )
     {
         delete m_ScreenVec[i];
@@ -1114,64 +1115,32 @@ void ScreenMgr::Init()
 
 void ScreenMgr::FirstShow()
 {
-    m_ScreenVec[vsp::VSP_MAIN_SCREEN]->Show();
-
-    // Windows not yet shown take their coordinates in the scale of the main window's screen.
-    int screen = m_ScreenVec[vsp::VSP_MAIN_SCREEN]->GetFlWindow()->screen_num();
-    for ( int i = 0 ; i < ( int )m_ScreenVec.size() ; i++ )
+    auto *main = dynamic_cast<MainVSPScreen *>( m_ScreenVec[vsp::VSP_MAIN_SCREEN] );
+    if ( !main ) { return; }
+    int screen = main->GetFlWindow()->screen_num();
+    for ( int i = 0; i < static_cast<int>( m_ScreenVec.size() ); ++i )
     {
-        if ( m_ScreenVec[i] && m_ScreenVec[i]->GetFlWindow() )
-        {
-            m_ScreenVec[i]->GetFlWindow()->screen_num( screen );
-        }
+        if ( !m_ScreenVec[i] ) { continue; }
+        m_ScreenVec[i]->SetScreenType( i );
+        if ( m_ScreenVec[i]->GetFlWindow() ) { m_ScreenVec[i]->GetFlWindow()->screen_num( screen ); }
+        if ( i != vsp::VSP_MAIN_SCREEN && i != vsp::VSP_COR_SCREEN )
+        { m_ScreenVec[i]->GetFlWindow()->set_non_modal(); }
     }
     VSP_Window::SetGeomScreen( screen );
+    // The normal tree and geometry editors are native children of the workspace,
+    // not separate windows arranged beyond the right edge of the monitor.
+    main->InitializeWorkspace();
+    main->Show();
+    if ( !IsGUIScreenDisabled( vsp::VSP_MANAGE_GEOM_SCREEN ) )
+    { m_ScreenVec[vsp::VSP_MANAGE_GEOM_SCREEN]->Show(); }
+    else { m_ScreenVec[vsp::VSP_NERF_MANAGE_GEOM_SCREEN]->Show(); }
 
-    // Set manage geom screen to show up to the main screen as the default.
-    int x,y,w,w1,h1,h2,h3;
-    x = m_ScreenVec[vsp::VSP_MAIN_SCREEN]->GetFlWindow()->x();
-    y = m_ScreenVec[vsp::VSP_MAIN_SCREEN]->GetFlWindow()->y();
-    w = m_ScreenVec[vsp::VSP_MAIN_SCREEN]->GetFlWindow()->w();
-    h1 = m_ScreenVec[vsp::VSP_MAIN_SCREEN]->GetFlWindow()->h();
-
-    m_ScreenVec[vsp::VSP_MANAGE_GEOM_SCREEN]->GetFlWindow()->position(x+w+5,y);
-    m_ScreenVec[vsp::VSP_NERF_MANAGE_GEOM_SCREEN]->GetFlWindow()->position(x+w+5,y);
-
-    h2 = m_ScreenVec[vsp::VSP_XSEC_SCREEN]->GetFlWindow()->h();
-    m_ScreenVec[vsp::VSP_XSEC_SCREEN]->GetFlWindow()->position( x + w + 5, y + h1 - h2 );
-
-    h3 = m_ScreenVec[vsp::VSP_MANAGE_GEOM_SCREEN]->GetFlWindow()->h();
-    w1 = m_ScreenVec[vsp::VSP_VEH_NOTES_SCREEN]->GetFlWindow()->w();
-    m_ScreenVec[vsp::VSP_VEH_NOTES_SCREEN]->GetFlWindow()->resize( x + w + 5, y + h3 + 35, w1, h1 - ( y + h3 + 5 ) );
-
-    x = m_ScreenVec[vsp::VSP_MANAGE_GEOM_SCREEN]->GetFlWindow()->x();
-    y = m_ScreenVec[vsp::VSP_MANAGE_GEOM_SCREEN]->GetFlWindow()->y();
-    w = m_ScreenVec[vsp::VSP_MANAGE_GEOM_SCREEN]->GetFlWindow()->w();
-
-    VSP_Window::SetGeomX( x + w );
-    VSP_Window::SetGeomY( y );
-
-    for ( int i = 0 ; i < ( int )m_ScreenVec.size() ; i++ )
-    {
-        if ( m_ScreenVec[i] )
-        {
-            m_ScreenVec[i]->SetScreenType( i );
-
-            if( i != vsp::VSP_MAIN_SCREEN && i != vsp::VSP_COR_SCREEN )
-            {
-                m_ScreenVec[i]->GetFlWindow()->set_non_modal();
-            }
-        }
-    }
-
-    // Show() after setting non_modal, as modality can not change if window shown.
-    m_ScreenVec[vsp::VSP_MANAGE_GEOM_SCREEN]->Show();
-    m_ScreenVec[vsp::VSP_NERF_MANAGE_GEOM_SCREEN]->Show();
-
-    if ( VehicleMgr.GetVehicle()->m_ShowNotesScreenParm.Get() )
-    {
-        ShowScreen( vsp::VSP_VEH_NOTES_SCREEN );
-    }
+    // Advanced analysis/file dialogs remain optional, non-modal tool windows.
+    // Put their starting position on the same monitor, not off its right edge.
+    VSP_Window::SetGeomX( main->GetFlWindow()->x() + 60 );
+    VSP_Window::SetGeomY( main->GetFlWindow()->y() + 80 );
+    if ( VehicleMgr.GetVehicle()->m_ShowNotesScreenParm.Get() ) { ShowScreen( vsp::VSP_VEH_NOTES_SCREEN ); }
+    SetUpdateFlag( true );
 }
 
 //==== Update All Displayed Screens ====//
@@ -1218,7 +1187,13 @@ void ScreenMgr::ShowScreen( int id )
             }
         }
 
-        m_ScreenVec[id]->Show(); // Won't work if it is disabled.  Don't need condition here.
+        if ( !IsGUIScreenDisabled( id ) &&
+             ( id == vsp::VSP_MANAGE_GEOM_SCREEN || id == vsp::VSP_NERF_MANAGE_GEOM_SCREEN ) )
+        {
+            auto *main = dynamic_cast<MainVSPScreen *>( m_ScreenVec[vsp::VSP_MAIN_SCREEN] );
+            if ( main ) { main->ShowWorkspacePanel( 0 ); }
+        }
+        m_ScreenVec[id]->Show(); // Show also enforces the screen's disabled state.
     }
 }
 

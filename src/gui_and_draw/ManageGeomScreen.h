@@ -66,6 +66,7 @@ public:
 
     void CreateScreens();
     void ShowHideGeomScreens();
+    void ResetProjectSelection();
 
     void SetNeedsShowHideGeoms()
     {

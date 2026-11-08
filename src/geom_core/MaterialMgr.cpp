@@ -2,6 +2,7 @@
 #include "VehicleMgr.h"
 #include "Vehicle.h"
 #include "ParmMgr.h"
+#include <algorithm>
 
 
 Material::Material()
@@ -624,6 +625,15 @@ void MaterialMgrSingleton::AddMaterial( const Material &mat )
     {
         m_Materials.push_back( mat );
     }
+}
+
+void MaterialMgrSingleton::ClearUserMaterials()
+{
+    m_Materials.erase( std::remove_if( m_Materials.begin(), m_Materials.end(),
+        []( const Material &material ) { return material.m_UserMaterial; } ), m_Materials.end() );
+    m_ActiveGeom.clear();
+    m_Alpha.Set( 1.0 );
+    m_Shininess.Set( 0.0 );
 }
 
 xmlNodePtr MaterialMgrSingleton::EncodeXml( xmlNodePtr & node )

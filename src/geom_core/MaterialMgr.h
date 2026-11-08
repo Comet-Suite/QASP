@@ -73,6 +73,9 @@ public:
 
     void AddMaterial( const Material &mat );
 
+    // QASP tab activation: project-local user materials must not bleed into another model.
+    void ClearUserMaterials();
+
     virtual xmlNodePtr EncodeXml( xmlNodePtr & node );
     virtual xmlNodePtr DecodeXml( xmlNodePtr & node );
 
